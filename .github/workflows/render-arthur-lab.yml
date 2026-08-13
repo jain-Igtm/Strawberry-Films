@@ -1,0 +1,118 @@
+name: Render Arthur Lab Short
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - "agent/**"
+    paths:
+      - "scripts/arthur_lab_short.py"
+      - ".github/workflows/render-arthur-lab.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-scene:
+    name: Build procedural Blender scene
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes blender
+      - name: Build scene
+        run: |
+          mkdir -p build
+          blender --background --python scripts/arthur_lab_short.py -- \
+            --build "$GITHUB_WORKSPACE/build/arthur-lab.blend"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arthur-lab-scene
+          path: build/arthur-lab.blend
+          retention-days: 14
+
+  render-frames:
+    name: Render frames ${{ matrix.start }}-${{ matrix.end }}
+    needs: build-scene
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - start: 1
+            end: 150
+            part: 1
+          - start: 151
+            end: 300
+            part: 2
+          - start: 301
+            end: 450
+            part: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes blender
+      - uses: actions/download-artifact@v4
+        with:
+          name: arthur-lab-scene
+          path: build
+      - name: Render frame range
+        run: |
+          mkdir -p render/frames
+          blender --background build/arthur-lab.blend \
+            -o "$GITHUB_WORKSPACE/render/frames/frame_####" \
+            -F PNG \
+            -s ${{ matrix.start }} \
+            -e ${{ matrix.end }} \
+            -a
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arthur-lab-frames-${{ matrix.part }}
+          path: render/frames/*.png
+          retention-days: 3
+
+  assemble-film:
+    name: Assemble silent MP4
+    needs: render-frames
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: arthur-lab-frames-*
+          path: render/frames
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: arthur-lab-scene
+          path: build
+      - name: Encode H.264 video
+        run: |
+          mkdir -p output
+          ffmpeg -y \
+            -framerate 15 \
+            -start_number 1 \
+            -i render/frames/frame_%04d.png \
+            -c:v libx264 \
+            -preset medium \
+            -crf 18 \
+            -pix_fmt yuv420p \
+            -movflags +faststart \
+            output/arthur-lab-short-silent.mp4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arthur-lab-short
+          path: |
+            output/arthur-lab-short-silent.mp4
+            build/arthur-lab.blend
+          retention-days: 30
