@@ -50,9 +50,9 @@ jobs:
           blender --background build/arthur-anime-gate.blend \
             -o "$GITHUB_WORKSPACE/build/motion/frame_####" \
             -F PNG \
-            -s 1 -e 110 -a
-          ffmpeg -y -framerate 15 \
-            -i build/motion/frame_%04d.png \
+            -s 1 -e 110 -j 2 -a
+          ffmpeg -y -framerate 7.5 \
+            -pattern_type glob -i 'build/motion/frame_*.png' \
             -c:v libx264 -preset medium -crf 18 \
             -pix_fmt yuv420p -movflags +faststart \
             build/arthur-anime-transformation-proof.mp4
