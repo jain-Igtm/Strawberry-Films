@@ -49,9 +49,8 @@ jobs:
           mkdir -p build/motion
           blender --background build/arthur-anime-gate.blend \
             -o "$GITHUB_WORKSPACE/build/motion/frame_####" \
-            -p 50 \
             -F PNG \
-            -s 1 -e 110 -j 2 -a
+            -s 1 -e 110 -a
           ffmpeg -y -framerate 15 \
             -i build/motion/frame_%04d.png \
             -c:v libx264 -preset medium -crf 18 \
