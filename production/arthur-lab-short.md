@@ -1,6 +1,8 @@
 # Arthur: Lab Break
 
-The first Strawberry Films production is a thirty-second, silent 3D action sequence. It establishes the technical language for longer Arthur stories while staying small enough to render automatically on GitHub.
+The target is a thirty-second silent anime 3D action sequence. The accepted first
+gate is the 7.33-second transformation shot; the fight beats below are the next
+production pass built from the same rigged Arthur scene.
 
 ## Story pass
 
@@ -10,7 +12,7 @@ Two guards enter after the transformation. The first attempts a baton strike. Th
 
 This is a severe psychopathic dissociative state. It is distinct from **THE STATE**. The environmental behavior therefore remains locally telekinetic and does not form the recursive Arthur-signing patterns associated with the full higher-dimensional event.
 
-## Timing
+## Target timing
 
 | Frames | Time | Action |
 | ---: | ---: | --- |
@@ -23,9 +25,9 @@ This is a severe psychopathic dissociative state. It is distinct from **THE STAT
 
 ## Production constraints
 
-- Output: 1280×720, 15 fps, H.264 MP4.
+- Accepted motion gate: 360×450, 110 frames, 15 fps, H.264 MP4.
+- Final short target: 1280×720, 15 fps, H.264 MP4.
 - Dialogue, music, and final sound design are intentionally absent.
-- Every visible element is created by `scripts/arthur_lab_short.py`; no manual Blender editing is required.
-- The Blender scene is preserved with the rendered video so later passes can replace models, refine acting, or extend shots.
-- GitHub Actions divides the render into three independent frame ranges and assembles them afterward.
-
+- Every visible element is assembled and animated by `scripts/arthur_anime_gate.py`; no manual Blender editing is required.
+- The accepted Arthur base is MB-Lab's continuous anime mesh with its fitted 71-bone rig, not the deleted primitive mannequin prototype.
+- The Blender scene is preserved with the rendered video so later passes can add guards, fight choreography, voice-over, music, and sound effects.
