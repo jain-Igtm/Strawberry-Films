@@ -221,7 +221,36 @@ def key_character_pose(armature: bpy.types.Object, frame: int) -> None:
         bone.keyframe_insert(data_path="location", frame=frame)
 
 
-def animate_arthur(armature: bpy.types.Object, face: bpy.types.Object) -> None:
+def add_psychic_hair_rise(hair: bpy.types.Object) -> None:
+    """Create a mesh-level lift so the transformation changes the silhouette."""
+    if not hair.data.shape_keys:
+        hair.shape_key_add(name="Basis", from_mix=False)
+    rise = hair.data.shape_keys.key_blocks.get("Psychic_Hair_Rise")
+    if not rise:
+        rise = hair.shape_key_add(name="Psychic_Hair_Rise", from_mix=False)
+
+    z_values = [vertex.co.z for vertex in hair.data.vertices]
+    z_min = min(z_values)
+    z_max = max(z_values)
+    threshold = z_min + (z_max - z_min) * 0.10
+    span = max(z_max - threshold, 0.001)
+    for index, vertex in enumerate(hair.data.vertices):
+        weight = max(0.0, min(1.0, (vertex.co.z - threshold) / span))
+        weight = weight**1.22
+        rise.data[index].co.z += 0.24 * weight
+        rise.data[index].co.x *= 1.0 - 0.16 * weight
+        rise.data[index].co.y *= 1.0 - 0.08 * weight
+
+    for frame, value in ((1, 0.0), (TRANSFORM_START, 0.0), (TRANSFORM_END, 1.0), (FRAME_END, 1.0)):
+        rise.value = value
+        rise.keyframe_insert(data_path="value", frame=frame)
+
+
+def animate_arthur(
+    armature: bpy.types.Object,
+    face: bpy.types.Object,
+    hair: bpy.types.Object,
+) -> None:
     set_base_pose(armature)
     key_character_pose(armature, 1)
     key_character_pose(armature, TRANSFORM_START)
@@ -241,6 +270,7 @@ def animate_arthur(armature: bpy.types.Object, face: bpy.types.Object) -> None:
     for index, bone in enumerate(hair_bones):
         bone.rotation_euler.x += math.radians(-1.2 - 0.35 * (index % 3))
     key_character_pose(armature, FRAME_END)
+    add_psychic_hair_rise(hair)
 
     if face.data.shape_keys:
         angry = face.data.shape_keys.key_blocks.get("target_2")
@@ -252,7 +282,11 @@ def animate_arthur(armature: bpy.types.Object, face: bpy.types.Object) -> None:
             angry.keyframe_insert(data_path="value", frame=TRANSFORM_END)
             angry.keyframe_insert(data_path="value", frame=FRAME_END)
 
-    for target in (armature, face.data.shape_keys if face.data.shape_keys else None):
+    for target in (
+        armature,
+        face.data.shape_keys if face.data.shape_keys else None,
+        hair.data.shape_keys if hair.data.shape_keys else None,
+    ):
         animation = target.animation_data if target else None
         if animation and animation.action:
             for curve in animation.action.fcurves:
@@ -323,9 +357,14 @@ def render_portrait(
     scene.render.resolution_x = 720
     scene.render.resolution_y = 900
     scene.render.resolution_percentage = 100
-    target = Vector((0.0, 0.0, 1.46))
-    camera.data.lens = 68
-    camera.location = (0.28 if three_quarter else 0.07, 1.48, 1.48)
+    changed = frame >= TRANSFORM_END
+    target = Vector((0.0, 0.0, 1.60 if changed else 1.46))
+    camera.data.lens = 62 if changed else 68
+    camera.location = (
+        0.28 if three_quarter else 0.07,
+        1.75 if changed else 1.48,
+        1.55 if changed else 1.48,
+    )
     look_at(camera, target)
     scene.render.filepath = str(output / filename)
     bpy.ops.render.render(write_still=True)
@@ -354,16 +393,16 @@ def configure_motion_preview(camera: bpy.types.Object) -> None:
         camera.keyframe_insert(data_path="rotation_euler", frame=frame)
         camera.data.keyframe_insert(data_path="lens", frame=frame)
 
-    camera.data.lens = 58
-    camera.location = (0.68, 2.35, 1.72)
-    look_at(camera, Vector((0.0, -0.12, 1.33)))
+    camera.data.lens = 50
+    camera.location = (0.45, 2.80, 1.70)
+    look_at(camera, Vector((0.0, -0.12, 1.55)))
     camera.keyframe_insert(data_path="location", frame=TRANSFORM_END)
     camera.keyframe_insert(data_path="rotation_euler", frame=TRANSFORM_END)
     camera.data.keyframe_insert(data_path="lens", frame=TRANSFORM_END)
 
-    camera.data.lens = 62
-    camera.location = (0.36, 1.92, 1.58)
-    look_at(camera, Vector((0.0, -0.06, 1.43)))
+    camera.data.lens = 54
+    camera.location = (0.30, 2.50, 1.65)
+    look_at(camera, Vector((0.0, -0.06, 1.58)))
     camera.keyframe_insert(data_path="location", frame=FRAME_END)
     camera.keyframe_insert(data_path="rotation_euler", frame=FRAME_END)
     camera.data.keyframe_insert(data_path="lens", frame=FRAME_END)
@@ -389,8 +428,8 @@ def main() -> None:
     clear_scene()
     create_lab()
     create_equipment()
-    armature, face, _body, _hair = import_arthur(model)
-    animate_arthur(armature, face)
+    armature, face, _body, hair = import_arthur(model)
+    animate_arthur(armature, face, hair)
     camera = configure_scene()
 
     render_portrait(camera, output, "arthur_vroid_neutral.png", 1)
@@ -402,7 +441,7 @@ def main() -> None:
     scene["arthur_model"] = "HairSample_Male VRoid beta sample"
     scene["arthur_model_license"] = "CC0"
     scene["arthur_model_source"] = "https://github.com/madjin/vrm-samples"
-    scene["arthur_animation"] = "150 frames at 15 fps; state change, facial acting, hair lift, floating equipment"
+    scene["arthur_animation"] = "150 frames at 15 fps; state change, facial acting, silhouette hair lift, floating equipment, camera push"
     bpy.ops.wm.save_as_mainfile(filepath=str(blend))
 
 
