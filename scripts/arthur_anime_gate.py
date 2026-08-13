@@ -764,7 +764,15 @@ def main() -> None:
     bpy.context.scene.render.filepath = str(output / "arthur_state_changed_face.png")
     bpy.ops.render.render(write_still=True)
     bpy.context.scene.frame_set(1)
-    # Motion proof is intentionally smaller than the still-quality gates.
+    # Motion QA uses the same geometry, rig, camera and material colors without
+    # recompiling the Eevee cel-shader graph for every sampled pose.
+    bpy.context.scene.render.engine = "BLENDER_WORKBENCH"
+    bpy.context.scene.display.shading.light = "STUDIO"
+    bpy.context.scene.display.shading.color_type = "MATERIAL"
+    bpy.context.scene.display.shading.show_shadows = True
+    bpy.context.scene.display.shading.show_cavity = True
+    bpy.context.scene.display.shading.cavity_type = "BOTH"
+    bpy.context.scene.display.shading.show_specular_highlight = False
     bpy.context.scene.render.resolution_percentage = 25
 
     bpy.context.scene["arthur_quality_gate"] = "continuous MB-Lab anime male base"
