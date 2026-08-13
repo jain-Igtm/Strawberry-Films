@@ -292,22 +292,22 @@ def create_hair() -> list[bpy.types.Object]:
     pieces = [hair_cap(hair)]
     # Wide, curved locks read as drawn anime hair and can later lift independently.
     locks = [
-        ("Fringe_L1", [(-0.17, -0.145, 1.72), (-0.18, -0.225, 1.68), (-0.145, -0.267, 1.605)], [0.060, 0.052, 0.008]),
-        ("Fringe_L2", [(-0.10, -0.165, 1.75), (-0.105, -0.244, 1.70), (-0.075, -0.274, 1.625)], [0.058, 0.047, 0.008]),
-        ("Fringe_C", [(-0.025, -0.175, 1.765), (-0.025, -0.255, 1.705), (0.005, -0.278, 1.645)], [0.060, 0.050, 0.007]),
-        ("Fringe_R1", [(0.055, -0.17, 1.755), (0.07, -0.25, 1.70), (0.105, -0.27, 1.64)], [0.058, 0.046, 0.007]),
-        ("Fringe_R2", [(0.125, -0.15, 1.72), (0.145, -0.225, 1.675), (0.165, -0.25, 1.61)], [0.055, 0.043, 0.006]),
-        ("Crown_L", [(-0.13, -0.05, 1.745), (-0.18, -0.075, 1.82), (-0.215, -0.02, 1.86)], [0.070, 0.048, 0.008]),
-        ("Crown_C", [(-0.03, -0.04, 1.77), (-0.02, -0.055, 1.85), (0.015, -0.01, 1.89)], [0.075, 0.050, 0.008]),
-        ("Crown_R", [(0.09, -0.035, 1.76), (0.14, -0.04, 1.83), (0.19, 0.01, 1.855)], [0.068, 0.045, 0.008]),
-        ("Temple_L", [(-0.19, -0.09, 1.68), (-0.215, -0.14, 1.62), (-0.205, -0.18, 1.54)], [0.048, 0.035, 0.006]),
-        ("Temple_R", [(0.19, -0.085, 1.68), (0.215, -0.13, 1.62), (0.205, -0.17, 1.55)], [0.048, 0.035, 0.006]),
+        ("Fringe_L1", [(-0.145, -0.145, 1.72), (-0.158, -0.218, 1.68), (-0.125, -0.260, 1.615)], [0.043, 0.035, 0.006]),
+        ("Fringe_L2", [(-0.075, -0.160, 1.745), (-0.082, -0.230, 1.70), (-0.055, -0.270, 1.635)], [0.042, 0.034, 0.006]),
+        ("Fringe_C", [(-0.012, -0.168, 1.755), (-0.012, -0.238, 1.705), (0.012, -0.272, 1.65)], [0.043, 0.035, 0.006]),
+        ("Fringe_R1", [(0.055, -0.160, 1.745), (0.065, -0.230, 1.70), (0.092, -0.265, 1.64)], [0.041, 0.032, 0.006]),
+        ("Fringe_R2", [(0.12, -0.145, 1.72), (0.135, -0.215, 1.68), (0.15, -0.25, 1.62)], [0.040, 0.031, 0.005]),
+        ("Crown_L", [(-0.115, -0.05, 1.74), (-0.15, -0.065, 1.785), (-0.175, -0.02, 1.815)], [0.046, 0.033, 0.006]),
+        ("Crown_C", [(-0.025, -0.04, 1.76), (-0.018, -0.05, 1.81), (0.01, -0.01, 1.83)], [0.048, 0.034, 0.006]),
+        ("Crown_R", [(0.075, -0.035, 1.75), (0.11, -0.04, 1.79), (0.15, 0.005, 1.815)], [0.045, 0.031, 0.006]),
+        ("Temple_L", [(-0.175, -0.085, 1.68), (-0.19, -0.13, 1.62), (-0.18, -0.17, 1.56)], [0.034, 0.025, 0.005]),
+        ("Temple_R", [(0.175, -0.08, 1.68), (0.19, -0.125, 1.62), (0.18, -0.165, 1.56)], [0.034, 0.025, 0.005]),
     ]
     pieces.extend(hair_blade(name, centers, widths, hair) for name, centers, widths in locks)
     return pieces
 
 
-def create_costume() -> list[bpy.types.Object]:
+def create_costume(body: bpy.types.Object) -> list[bpy.types.Object]:
     cloth = cel_material(
         "Arthur_LabCoat",
         (0.018, 0.035, 0.075, 1.0),
@@ -320,27 +320,44 @@ def create_costume() -> list[bpy.types.Object]:
         (0.10, 0.16, 0.22, 1.0),
         (0.28, 0.42, 0.52, 1.0),
     )
+    trousers = cel_material(
+        "Arthur_Trousers",
+        (0.012, 0.018, 0.032, 1.0),
+        (0.035, 0.055, 0.085, 1.0),
+        (0.10, 0.15, 0.21, 1.0),
+    )
+    shoes = cel_material(
+        "Arthur_Shoes",
+        (0.004, 0.005, 0.009, 1.0),
+        (0.014, 0.019, 0.028, 1.0),
+        (0.06, 0.075, 0.09, 1.0),
+    )
+    cloth_index = len(body.data.materials)
+    body.data.materials.append(cloth)
+    trouser_index = len(body.data.materials)
+    body.data.materials.append(trousers)
+    shoe_index = len(body.data.materials)
+    body.data.materials.append(shoes)
+    for polygon in body.data.polygons:
+        if polygon.material_index != 2:
+            continue
+        center = sum((body.data.vertices[index].co for index in polygon.vertices), Vector()) / len(polygon.vertices)
+        if center.z < 0.105:
+            polygon.material_index = shoe_index
+        elif center.z < 0.79:
+            polygon.material_index = trouser_index
+        elif center.z < 1.405 and abs(center.x) < 0.655:
+            polygon.material_index = cloth_index
+
     pieces = [
         ring_shell(
-            "Arthur_Jacket",
-            [
-                (0.74, 0.255, 0.125),
-                (0.88, 0.285, 0.135),
-                (1.08, 0.300, 0.145),
-                (1.27, 0.325, 0.155),
-                (1.37, 0.365, 0.158),
-                (1.405, 0.255, 0.128),
-            ],
-            cloth,
-        ),
-        ring_shell(
             "Arthur_HighCollar",
-            [(1.38, 0.125, 0.098), (1.47, 0.132, 0.102), (1.505, 0.119, 0.096)],
+            [(1.39, 0.112, 0.088), (1.47, 0.118, 0.091), (1.492, 0.107, 0.086)],
             trim,
-        ),
+        )
     ]
-    # One broad front seam and collar tab add graphic design without mannequin geometry.
-    bpy.ops.mesh.primitive_cube_add(location=(0.0, -0.160, 1.075), scale=(0.011, 0.008, 0.295))
+    # A narrow graphic seam follows the front plane without becoming body geometry.
+    bpy.ops.mesh.primitive_cube_add(location=(0.0, -0.151, 1.075), scale=(0.006, 0.006, 0.285))
     seam = bpy.context.object
     seam.name = "Arthur_JacketSeam"
     assign_material(seam, trim)
@@ -448,11 +465,11 @@ def render_view(
     portrait: bool,
 ) -> None:
     scene = bpy.context.scene
-    distance = height * (0.78 if portrait else 1.32)
-    target_z = center.z + (height * (0.32 if portrait else 0.02))
+    distance = height * (0.98 if portrait else 1.32)
+    target_z = center.z + (height * (0.31 if portrait else 0.02))
     camera.location = Vector((height * 0.11, side_sign * distance, target_z + height * 0.01))
     look_at(camera, Vector((0.0, 0.0, target_z)))
-    camera.data.lens = 72 if portrait else 58
+    camera.data.lens = 62 if portrait else 58
     scene.render.resolution_x = 720 if portrait else 640
     scene.render.resolution_y = 900
     scene.render.filepath = str(output / f"{label}.png")
@@ -470,7 +487,7 @@ def main() -> None:
     clear_scene()
     body = append_anime_body(mblab)
     create_hair()
-    create_costume()
+    create_costume(body)
     low, high = bounds(body)
     center = (low + high) * 0.5
     height = high.z - low.z
@@ -481,9 +498,9 @@ def main() -> None:
     render_view(camera, output, "front_y_negative_body", center, height, -1.0, False)
     render_view(camera, output, "front_y_negative_face", center, height, -1.0, True)
     # The three-quarter gate catches flat hair, bad silhouettes and facial distortion.
-    camera.location = Vector((height * 0.45, -height * 0.74, center.z + height * 0.34))
+    camera.location = Vector((height * 0.38, -height * 0.94, center.z + height * 0.33))
     look_at(camera, Vector((0.0, -0.04, center.z + height * 0.31)))
-    camera.data.lens = 68
+    camera.data.lens = 62
     bpy.context.scene.render.resolution_x = 720
     bpy.context.scene.render.resolution_y = 900
     bpy.context.scene.render.filepath = str(output / "arthur_three_quarter_face.png")
