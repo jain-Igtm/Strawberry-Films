@@ -23,7 +23,7 @@ jobs:
       - name: Install Blender
         run: |
           sudo apt-get update
-          sudo apt-get install --yes blender
+          sudo apt-get install --yes blender libegl1 libgl1
       - name: Build scene
         run: |
           mkdir -p build
@@ -58,7 +58,7 @@ jobs:
       - name: Install Blender
         run: |
           sudo apt-get update
-          sudo apt-get install --yes blender
+          sudo apt-get install --yes blender libegl1 libgl1
       - uses: actions/download-artifact@v4
         with:
           name: arthur-lab-scene
