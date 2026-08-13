@@ -50,8 +50,8 @@ jobs:
           blender --background build/arthur-anime-gate.blend \
             -o "$GITHUB_WORKSPACE/build/motion/frame_####" \
             -F PNG \
-            -s 1 -e 110 -j 4 -a
-          ffmpeg -y -framerate 3.75 \
+            -s 1 -e 110 -a
+          ffmpeg -y -framerate 15 \
             -pattern_type glob -i 'build/motion/frame_*.png' \
             -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" \
             -c:v libx264 -preset medium -crf 18 \

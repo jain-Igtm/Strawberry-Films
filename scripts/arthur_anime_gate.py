@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build the real anime-body quality gate for Arthur.
 
-This intentionally renders stills only.  The animation pipeline stays off until the
-continuous anime mesh, face, hair and costume have passed visual inspection.
+It builds a reusable rigged anime character, renders visual checkpoints, and saves
+the animated transformation scene for the automated motion proof.
 """
 
 from __future__ import annotations
@@ -256,13 +256,15 @@ def ring_shell(
 
 
 def hair_cap(material: bpy.types.Material) -> bpy.types.Object:
-    center = Vector((0.0, -0.075, 1.575))
-    radius_x, radius_y, radius_z = 0.205, 0.178, 0.205
-    rings = 9
+    # The cap hugs MB-Lab's anime cranium.  Oversizing this shell turns the
+    # silhouette into a helmet once the head pitches forward.
+    center = Vector((0.0, -0.055, 1.605))
+    radius_x, radius_y, radius_z = 0.158, 0.142, 0.175
+    rings = 10
     sides = 40
     vertices: list[tuple[float, float, float]] = []
     for ring in range(rings):
-        theta = (math.pi * 0.54) * ring / (rings - 1)
+        theta = (math.pi * 0.44) * ring / (rings - 1)
         radial = math.sin(theta)
         for side in range(sides):
             phi = math.tau * side / sides
@@ -271,7 +273,7 @@ def hair_cap(material: bpy.types.Material) -> bpy.types.Object:
             z = center.z + radius_z * math.cos(theta)
             # A raised, asymmetric front edge prevents a helmet-shaped hairline.
             frontness = max(0.0, -math.sin(phi))
-            z += frontness * (0.052 + 0.018 * math.sin(phi * 3.0)) * (ring / (rings - 1)) ** 3
+            z += frontness * (0.064 + 0.012 * math.sin(phi * 3.0)) * (ring / (rings - 1)) ** 3
             vertices.append((x, y, z))
     faces: list[tuple[int, ...]] = []
     for ring in range(rings - 1):
@@ -337,16 +339,16 @@ def create_hair() -> list[bpy.types.Object]:
     pieces = [hair_cap(hair)]
     # Wide, curved locks read as drawn anime hair and can later lift independently.
     locks = [
-        ("Fringe_L1", [(-0.145, -0.145, 1.72), (-0.158, -0.218, 1.68), (-0.125, -0.260, 1.615)], [0.043, 0.035, 0.006]),
-        ("Fringe_L2", [(-0.075, -0.160, 1.745), (-0.082, -0.230, 1.70), (-0.055, -0.270, 1.635)], [0.042, 0.034, 0.006]),
-        ("Fringe_C", [(-0.012, -0.168, 1.755), (-0.012, -0.238, 1.705), (0.012, -0.272, 1.65)], [0.043, 0.035, 0.006]),
-        ("Fringe_R1", [(0.055, -0.160, 1.745), (0.065, -0.230, 1.70), (0.092, -0.265, 1.64)], [0.041, 0.032, 0.006]),
-        ("Fringe_R2", [(0.12, -0.145, 1.72), (0.135, -0.215, 1.68), (0.15, -0.25, 1.62)], [0.040, 0.031, 0.005]),
-        ("Crown_L", [(-0.115, -0.05, 1.74), (-0.15, -0.065, 1.785), (-0.175, -0.02, 1.815)], [0.046, 0.033, 0.006]),
-        ("Crown_C", [(-0.025, -0.04, 1.76), (-0.018, -0.05, 1.81), (0.01, -0.01, 1.83)], [0.048, 0.034, 0.006]),
-        ("Crown_R", [(0.075, -0.035, 1.75), (0.11, -0.04, 1.79), (0.15, 0.005, 1.815)], [0.045, 0.031, 0.006]),
-        ("Temple_L", [(-0.175, -0.085, 1.68), (-0.19, -0.13, 1.62), (-0.18, -0.17, 1.56)], [0.034, 0.025, 0.005]),
-        ("Temple_R", [(0.175, -0.08, 1.68), (0.19, -0.125, 1.62), (0.18, -0.165, 1.56)], [0.034, 0.025, 0.005]),
+        ("Fringe_L1", [(-0.112, -0.135, 1.73), (-0.122, -0.198, 1.695), (-0.102, -0.232, 1.655)], [0.032, 0.025, 0.005]),
+        ("Fringe_L2", [(-0.058, -0.145, 1.75), (-0.062, -0.207, 1.71), (-0.040, -0.238, 1.67)], [0.032, 0.025, 0.005]),
+        ("Fringe_C", [(-0.005, -0.150, 1.758), (0.000, -0.214, 1.718), (0.015, -0.241, 1.68)], [0.033, 0.025, 0.005]),
+        ("Fringe_R1", [(0.050, -0.145, 1.75), (0.060, -0.205, 1.71), (0.080, -0.235, 1.67)], [0.031, 0.024, 0.005]),
+        ("Fringe_R2", [(0.100, -0.132, 1.73), (0.112, -0.192, 1.695), (0.125, -0.224, 1.655)], [0.030, 0.023, 0.004]),
+        ("Crown_L", [(-0.090, -0.035, 1.75), (-0.118, -0.048, 1.795), (-0.132, -0.005, 1.825)], [0.034, 0.025, 0.005]),
+        ("Crown_C", [(-0.018, -0.025, 1.77), (-0.012, -0.035, 1.815), (0.012, 0.000, 1.842)], [0.036, 0.026, 0.005]),
+        ("Crown_R", [(0.060, -0.028, 1.76), (0.088, -0.035, 1.802), (0.118, 0.005, 1.828)], [0.034, 0.024, 0.005]),
+        ("Temple_L", [(-0.135, -0.075, 1.69), (-0.151, -0.112, 1.655), (-0.145, -0.145, 1.615)], [0.023, 0.017, 0.004]),
+        ("Temple_R", [(0.135, -0.072, 1.69), (0.150, -0.108, 1.655), (0.145, -0.142, 1.615)], [0.023, 0.017, 0.004]),
     ]
     pieces.extend(hair_blade(name, centers, widths, hair) for name, centers, widths in locks)
     return pieces
@@ -773,7 +775,7 @@ def main() -> None:
     bpy.context.scene.display.shading.show_cavity = True
     bpy.context.scene.display.shading.cavity_type = "BOTH"
     bpy.context.scene.display.shading.show_specular_highlight = False
-    bpy.context.scene.render.resolution_percentage = 25
+    bpy.context.scene.render.resolution_percentage = 50
 
     bpy.context.scene["arthur_quality_gate"] = "continuous MB-Lab anime male base"
     bpy.context.scene["source_project"] = "https://github.com/animate1978/MB-Lab"
