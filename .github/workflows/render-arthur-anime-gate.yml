@@ -7,6 +7,7 @@ on:
       - "agent/**"
     paths:
       - "scripts/arthur_anime_gate.py"
+      - "scripts/arthur_reference_gate.py"
       - ".github/workflows/render-arthur-anime-gate.yml"
 
 permissions:
@@ -18,7 +19,7 @@ concurrency:
 
 jobs:
   anime-body-gate:
-    name: Render continuous anime mesh
+    name: Render approved Arthur reference design
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -32,22 +33,22 @@ jobs:
             https://download.blender.org/release/Blender4.2/blender-4.2.0-linux-x64.tar.xz
           tar --extract --xz --file /tmp/blender.tar.xz --directory /tmp
           echo "/tmp/blender-4.2.0-linux-x64" >> "$GITHUB_PATH"
-      - name: Fetch MB-Lab anime body library
+      - name: Fetch MB-Lab body and rig library
         run: |
           git clone --depth 1 --branch 1_8_1 \
             https://github.com/animate1978/MB-Lab.git \
             "$RUNNER_TEMP/MB-Lab"
-      - name: Build and render orientation gate
+      - name: Build approved reference character and scene
         run: |
           mkdir -p build/review
-          blender --background --python scripts/arthur_anime_gate.py -- \
+          blender --background --python scripts/arthur_reference_gate.py -- \
             --mblab "$RUNNER_TEMP/MB-Lab" \
             --output "$GITHUB_WORKSPACE/build/review" \
-            --blend "$GITHUB_WORKSPACE/build/arthur-anime-gate.blend"
+            --blend "$GITHUB_WORKSPACE/build/arthur-reference-gate.blend"
       - name: Render transformation and fight motion proof
         run: |
           mkdir -p build/motion
-          blender --background build/arthur-anime-gate.blend \
+          blender --background build/arthur-reference-gate.blend \
             -o "$GITHUB_WORKSPACE/build/motion/frame_####" \
             -F PNG \
             -s 1 -e 290 -a
@@ -56,12 +57,12 @@ jobs:
             -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" \
             -c:v libx264 -preset medium -crf 18 \
             -pix_fmt yuv420p -movflags +faststart \
-            build/arthur-anime-lab-fight-proof.mp4
+            build/arthur-reference-lab-fight-proof.mp4
       - uses: actions/upload-artifact@v4
         with:
-          name: arthur-anime-body-gate
+          name: arthur-reference-cartoon
           path: |
             build/review/*.png
-            build/arthur-anime-lab-fight-proof.mp4
-            build/arthur-anime-gate.blend
+            build/arthur-reference-lab-fight-proof.mp4
+            build/arthur-reference-gate.blend
           retention-days: 7
