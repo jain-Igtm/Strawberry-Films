@@ -44,24 +44,24 @@ jobs:
             --mblab "$RUNNER_TEMP/MB-Lab" \
             --output "$GITHUB_WORKSPACE/build/review" \
             --blend "$GITHUB_WORKSPACE/build/arthur-anime-gate.blend"
-      - name: Render transformation motion proof
+      - name: Render transformation and fight motion proof
         run: |
           mkdir -p build/motion
           blender --background build/arthur-anime-gate.blend \
             -o "$GITHUB_WORKSPACE/build/motion/frame_####" \
             -F PNG \
-            -s 1 -e 110 -a
+            -s 1 -e 290 -a
           ffmpeg -y -framerate 15 \
             -pattern_type glob -i 'build/motion/frame_*.png' \
             -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" \
             -c:v libx264 -preset medium -crf 18 \
             -pix_fmt yuv420p -movflags +faststart \
-            build/arthur-anime-transformation-proof.mp4
+            build/arthur-anime-lab-fight-proof.mp4
       - uses: actions/upload-artifact@v4
         with:
           name: arthur-anime-body-gate
           path: |
             build/review/*.png
-            build/arthur-anime-transformation-proof.mp4
+            build/arthur-anime-lab-fight-proof.mp4
             build/arthur-anime-gate.blend
           retention-days: 7

@@ -49,6 +49,7 @@ def cel_material(
     texture_image: bpy.types.Image | None = None,
 ) -> bpy.types.Material:
     material = bpy.data.materials.new(name)
+    material.diffuse_color = base
     material.use_nodes = True
     nodes = material.node_tree.nodes
     links = material.node_tree.links
@@ -93,6 +94,7 @@ def textured_eye_material(
     albedo: bpy.types.Image | None,
 ) -> bpy.types.Material:
     material = bpy.data.materials.new("Arthur_AnimeEyes")
+    material.diffuse_color = (0.12, 0.64, 0.72, 1.0)
     material.use_nodes = True
     nodes = material.node_tree.nodes
     links = material.node_tree.links
@@ -185,6 +187,7 @@ def emission_material(
     strength: float = 1.0,
 ) -> bpy.types.Material:
     material = bpy.data.materials.new(name)
+    material.diffuse_color = color
     material.use_nodes = True
     nodes = material.node_tree.nodes
     links = material.node_tree.links
@@ -417,6 +420,7 @@ def create_costume(body: bpy.types.Object) -> list[bpy.types.Object]:
 def rig_anime_body(
     body: bpy.types.Object,
     mblab_root: Path,
+    character_name: str = "Arthur",
 ) -> bpy.types.Object:
     """Attach MB-Lab's fitted deformation skeleton without enabling its UI add-on."""
     package_name = "strawberry_mblab_vendor"
@@ -435,7 +439,7 @@ def rig_anime_body(
     armature = skeleton.get_armature()
     if not armature:
         raise RuntimeError("MB-Lab did not create Arthur's armature")
-    armature.name = "Arthur_AnimeRig"
+    armature.name = f"{character_name}_AnimeRig"
     armature.show_in_front = True
     armature.hide_render = True
     print(
@@ -445,6 +449,25 @@ def rig_anime_body(
         f"modifiers={len(body.modifiers)}",
     )
     return armature
+
+
+def parent_keep_transform(obj: bpy.types.Object, parent: bpy.types.Object) -> None:
+    world = obj.matrix_world.copy()
+    obj.parent = parent
+    obj.matrix_world = world
+
+
+def create_character_root(
+    character_name: str,
+    body: bpy.types.Object,
+    armature: bpy.types.Object,
+) -> bpy.types.Object:
+    root = bpy.data.objects.new(f"{character_name}_MotionRoot", None)
+    bpy.context.collection.objects.link(root)
+    root.rotation_mode = "XYZ"
+    parent_keep_transform(body, root)
+    parent_keep_transform(armature, root)
+    return root
 
 
 def bone_parent(obj: bpy.types.Object, armature: bpy.types.Object, bone_name: str) -> None:
@@ -543,11 +566,225 @@ def create_floating_equipment() -> list[bpy.types.Object]:
     return pieces
 
 
+def create_guard_uniform(
+    body: bpy.types.Object,
+    character_name: str,
+    accent: tuple[float, float, float, float],
+) -> None:
+    uniform = cel_material(
+        f"{character_name}_Uniform",
+        (0.010, 0.014, 0.022, 1.0),
+        (0.028, 0.045, 0.070, 1.0),
+        accent,
+    )
+    boots = cel_material(
+        f"{character_name}_Boots",
+        (0.003, 0.004, 0.006, 1.0),
+        (0.010, 0.014, 0.020, 1.0),
+        (0.055, 0.070, 0.085, 1.0),
+    )
+    uniform_index = len(body.data.materials)
+    body.data.materials.append(uniform)
+    boot_index = len(body.data.materials)
+    body.data.materials.append(boots)
+    for polygon in body.data.polygons:
+        if polygon.material_index == 3:
+            continue
+        center = sum((body.data.vertices[index].co for index in polygon.vertices), Vector()) / len(polygon.vertices)
+        if center.z < 0.15:
+            polygon.material_index = boot_index
+        elif center.z < 1.49:
+            polygon.material_index = uniform_index
+
+
+def create_guard_gear(
+    character_name: str,
+    armature: bpy.types.Object,
+    accent: tuple[float, float, float, float],
+) -> tuple[list[bpy.types.Object], bpy.types.Object]:
+    armor = cel_material(
+        f"{character_name}_Armor",
+        (0.008, 0.012, 0.020, 1.0),
+        (0.040, 0.065, 0.095, 1.0),
+        accent,
+    )
+    visor_material = emission_material(
+        f"{character_name}_Visor",
+        (0.04, 0.38, 0.52, 1.0),
+        0.65,
+    )
+    gear: list[bpy.types.Object] = []
+
+    helmet = hair_cap(armor)
+    helmet.name = f"{character_name}_Helmet"
+    bone_parent(helmet, armature, "head")
+    gear.append(helmet)
+
+    visor = cube_object(
+        f"{character_name}_Visor",
+        (0.0, -0.204, 1.678),
+        (0.137, 0.015, 0.048),
+        visor_material,
+        0.012,
+    )
+    bone_parent(visor, armature, "head")
+    gear.append(visor)
+
+    chest = cube_object(
+        f"{character_name}_ChestPlate",
+        (0.0, -0.118, 1.22),
+        (0.145, 0.025, 0.19),
+        armor,
+        0.025,
+    )
+    bone_parent(chest, armature, "spine03")
+    gear.append(chest)
+    for side, x in (("L", -0.178), ("R", 0.178)):
+        shoulder = cube_object(
+            f"{character_name}_Shoulder_{side}",
+            (x, -0.015, 1.40),
+            (0.060, 0.082, 0.042),
+            armor,
+            0.022,
+        )
+        bone_parent(shoulder, armature, f"upperarm_{side}")
+        gear.append(shoulder)
+
+    baton = None
+    bpy.ops.mesh.primitive_cylinder_add(
+        vertices=16,
+        radius=0.022,
+        depth=0.52,
+        location=(0.34, -0.12, 1.02),
+    )
+    baton = bpy.context.object
+    baton.name = f"{character_name}_Baton"
+    assign_material(baton, armor)
+    baton.rotation_euler = (math.radians(78.0), 0.0, math.radians(8.0))
+    bone_parent(baton, armature, "hand_R")
+    gear.append(baton)
+    return gear, baton
+
+
+def create_anime_guard(
+    mblab_root: Path,
+    character_name: str,
+    accent: tuple[float, float, float, float],
+) -> tuple[bpy.types.Object, bpy.types.Object, bpy.types.Object, bpy.types.Object]:
+    body = append_anime_body(mblab_root, character_name)
+    create_guard_uniform(body, character_name, accent)
+    armature = rig_anime_body(body, mblab_root, character_name)
+    gear, baton = create_guard_gear(character_name, armature, accent)
+    root = create_character_root(character_name, body, armature)
+    for object_ in gear:
+        if object_.parent is None:
+            parent_keep_transform(object_, root)
+    return body, armature, root, baton
+
+
 def key_rig_pose(armature: bpy.types.Object, frame: int) -> None:
     for bone in armature.pose.bones:
         bone.rotation_mode = "QUATERNION"
         bone.keyframe_insert(data_path="rotation_quaternion", frame=frame)
         bone.keyframe_insert(data_path="location", frame=frame)
+
+
+def key_root_pose(
+    root: bpy.types.Object,
+    frame: int,
+    location: tuple[float, float, float],
+    rotation: tuple[float, float, float] = (0.0, 0.0, 0.0),
+) -> None:
+    root.location = location
+    root.rotation_euler = rotation
+    root.keyframe_insert(data_path="location", frame=frame)
+    root.keyframe_insert(data_path="rotation_euler", frame=frame)
+
+
+def key_pose_file(
+    armature: bpy.types.Object,
+    pose_path: Path,
+    frame: int,
+) -> None:
+    load_pose(armature, pose_path)
+    key_rig_pose(armature, frame)
+
+
+def animate_fight(
+    arthur_armature: bpy.types.Object,
+    arthur_root: bpy.types.Object,
+    guard_one: tuple[bpy.types.Object, bpy.types.Object],
+    guard_two: tuple[bpy.types.Object, bpy.types.Object],
+    mblab_root: Path,
+) -> None:
+    scene = bpy.context.scene
+    scene.frame_end = 290
+    poses = mblab_root / "data" / "poses" / "male_poses"
+    guard_one_armature, guard_one_root = guard_one
+    guard_two_armature, guard_two_root = guard_two
+
+    # Arthur barely moves: a short redirect for the baton, then a turn made
+    # before the second guard reaches him.
+    key_pose_file(arthur_armature, poses / "evil_waiting_orders01.json", 110)
+    key_pose_file(arthur_armature, poses / "evil_waiting_orders01.json", 138)
+    key_pose_file(arthur_armature, poses / "evil_explains.json", 158)
+    key_pose_file(arthur_armature, poses / "evil_waiting_orders02.json", 184)
+    key_pose_file(arthur_armature, poses / "evil_waiting_orders02.json", 212)
+    key_pose_file(arthur_armature, poses / "evil_explains.json", 232)
+    key_pose_file(arthur_armature, poses / "evil_waiting_orders01.json", 254)
+    key_pose_file(arthur_armature, poses / "evil_waiting_orders01.json", 290)
+    key_root_pose(arthur_root, 1, (0.0, 0.0, 0.0))
+    key_root_pose(arthur_root, 138, (0.0, 0.0, 0.0))
+    key_root_pose(arthur_root, 162, (0.08, 0.03, 0.0), (0.0, 0.0, math.radians(-9.0)))
+    key_root_pose(arthur_root, 184, (0.0, 0.0, 0.0))
+    key_root_pose(arthur_root, 212, (0.0, 0.0, 0.0))
+    key_root_pose(arthur_root, 235, (-0.05, 0.02, 0.0), (0.0, 0.0, math.radians(12.0)))
+    key_root_pose(arthur_root, 254, (0.0, 0.0, 0.0))
+    key_root_pose(arthur_root, 290, (0.0, 0.0, 0.0))
+
+    # Guard one enters from camera-left, commits to the baton strike, and is
+    # redirected into the padded side of the laboratory.
+    key_pose_file(guard_one_armature, poses / "standing_basic.json", 1)
+    key_pose_file(guard_one_armature, poses / "standing_basic.json", 110)
+    key_pose_file(guard_one_armature, poses / "standing_hero01.json", 132)
+    key_pose_file(guard_one_armature, poses / "evil_beast.json", 154)
+    key_pose_file(guard_one_armature, poses / "flying01.json", 169)
+    key_pose_file(guard_one_armature, poses / "flying02.json", 188)
+    key_pose_file(guard_one_armature, poses / "flying02.json", 290)
+    key_root_pose(guard_one_root, 1, (-3.1, 0.36, 0.0))
+    key_root_pose(guard_one_root, 110, (-3.1, 0.36, 0.0))
+    key_root_pose(guard_one_root, 132, (-2.15, 0.30, 0.0))
+    key_root_pose(guard_one_root, 154, (-0.78, 0.10, 0.0))
+    key_root_pose(guard_one_root, 166, (-0.58, 0.08, 0.02), (0.0, 0.0, math.radians(-12.0)))
+    key_root_pose(guard_one_root, 184, (-2.62, 0.62, 0.16), (0.0, math.radians(-74.0), math.radians(-28.0)))
+    key_root_pose(guard_one_root, 202, (-2.88, 0.72, 0.05), (0.0, math.radians(-86.0), math.radians(-34.0)))
+    key_root_pose(guard_one_root, 290, (-2.88, 0.72, 0.05), (0.0, math.radians(-86.0), math.radians(-34.0)))
+
+    # Guard two waits on the opposite side, charges after the first impact,
+    # locks in mid-motion, and drops rather than being struck by Arthur.
+    key_pose_file(guard_two_armature, poses / "standing_basic.json", 1)
+    key_pose_file(guard_two_armature, poses / "standing_basic.json", 166)
+    key_pose_file(guard_two_armature, poses / "standing_hero02.json", 194)
+    key_pose_file(guard_two_armature, poses / "evil_beast.json", 222)
+    key_pose_file(guard_two_armature, poses / "captured01.json", 238)
+    key_pose_file(guard_two_armature, poses / "flying02.json", 259)
+    key_pose_file(guard_two_armature, poses / "flying02.json", 290)
+    key_root_pose(guard_two_root, 1, (3.2, 0.62, 0.0), (0.0, 0.0, math.radians(180.0)))
+    key_root_pose(guard_two_root, 166, (3.2, 0.62, 0.0), (0.0, 0.0, math.radians(180.0)))
+    key_root_pose(guard_two_root, 194, (2.22, 0.40, 0.0), (0.0, 0.0, math.radians(180.0)))
+    key_root_pose(guard_two_root, 222, (0.78, 0.12, 0.0), (0.0, 0.0, math.radians(180.0)))
+    key_root_pose(guard_two_root, 238, (0.64, 0.10, 0.0), (0.0, 0.0, math.radians(180.0)))
+    key_root_pose(guard_two_root, 259, (1.18, 0.44, 0.02), (math.radians(18.0), math.radians(74.0), math.radians(158.0)))
+    key_root_pose(guard_two_root, 276, (1.48, 0.62, 0.01), (math.radians(12.0), math.radians(88.0), math.radians(154.0)))
+    key_root_pose(guard_two_root, 290, (1.48, 0.62, 0.01), (math.radians(12.0), math.radians(88.0), math.radians(154.0)))
+
+    for target in (arthur_armature, arthur_root, guard_one_armature, guard_one_root, guard_two_armature, guard_two_root):
+        if target.animation_data and target.animation_data.action:
+            for curve in target.animation_data.action.fcurves:
+                for point in curve.keyframe_points:
+                    point.interpolation = "BEZIER"
+                    point.easing = "EASE_IN_OUT"
+    scene.frame_set(1)
 
 
 def animate_transformation(
@@ -609,7 +846,10 @@ def animate_transformation(
     scene.frame_set(1)
 
 
-def append_anime_body(mblab_root: Path) -> bpy.types.Object:
+def append_anime_body(
+    mblab_root: Path,
+    character_name: str = "Arthur",
+) -> bpy.types.Object:
     library = mblab_root / "data" / "humanoid_library.blend"
     if not library.is_file():
         raise FileNotFoundError(f"MB-Lab body library is missing: {library}")
@@ -627,7 +867,7 @@ def append_anime_body(mblab_root: Path) -> bpy.types.Object:
     if body is None:
         raise RuntimeError("Blender returned an empty MB-Lab anime body")
     bpy.context.collection.objects.link(body)
-    body.name = "Arthur_AnimeBody"
+    body.name = f"{character_name}_AnimeBody"
     body.hide_render = False
     body.hide_viewport = False
     body.select_set(True)
@@ -726,6 +966,36 @@ def render_view(
     bpy.ops.render.render(write_still=True)
 
 
+def animate_fight_camera(camera: bpy.types.Object) -> None:
+    scene = bpy.context.scene
+    camera.rotation_mode = "QUATERNION"
+    shots = [
+        (1, (0.20, -2.05, 1.62), (0.0, 0.0, 1.42), 58.0),
+        (104, (0.20, -2.05, 1.62), (0.0, 0.0, 1.42), 58.0),
+        (118, (0.00, -5.15, 1.55), (0.0, 0.30, 1.10), 48.0),
+        (154, (-0.32, -4.55, 1.40), (-0.45, 0.20, 1.08), 52.0),
+        (184, (-0.55, -5.00, 1.58), (-0.70, 0.40, 1.00), 48.0),
+        (212, (0.48, -4.70, 1.42), (0.55, 0.20, 1.08), 51.0),
+        (244, (0.55, -4.35, 1.38), (0.42, 0.25, 1.02), 53.0),
+        (276, (0.00, -5.20, 1.56), (0.0, 0.38, 0.96), 48.0),
+        (290, (0.00, -5.20, 1.56), (0.0, 0.38, 0.96), 48.0),
+    ]
+    for frame, location, target, lens in shots:
+        camera.location = location
+        camera.rotation_quaternion = (Vector(target) - camera.location).to_track_quat("-Z", "Y")
+        camera.data.lens = lens
+        camera.keyframe_insert(data_path="location", frame=frame)
+        camera.keyframe_insert(data_path="rotation_quaternion", frame=frame)
+        camera.data.keyframe_insert(data_path="lens", frame=frame)
+    for target in (camera, camera.data):
+        if target.animation_data and target.animation_data.action:
+            for curve in target.animation_data.action.fcurves:
+                for point in curve.keyframe_points:
+                    point.interpolation = "BEZIER"
+                    point.easing = "EASE_IN_OUT"
+    scene.frame_set(1)
+
+
 def main() -> None:
     args = cli()
     mblab = Path(args.mblab).resolve()
@@ -745,7 +1015,25 @@ def main() -> None:
         bone_parent(object_, armature, "head")
     for object_ in costume:
         bone_parent(object_, armature, "spine03")
+    arthur_root = create_character_root("Arthur", body, armature)
+    guard_one_body, guard_one_armature, guard_one_root, _ = create_anime_guard(
+        mblab,
+        "GuardOne",
+        (0.11, 0.30, 0.42, 1.0),
+    )
+    guard_two_body, guard_two_armature, guard_two_root, _ = create_anime_guard(
+        mblab,
+        "GuardTwo",
+        (0.34, 0.13, 0.16, 1.0),
+    )
     animate_transformation(armature, hair, mblab)
+    animate_fight(
+        armature,
+        arthur_root,
+        (guard_one_armature, guard_one_root),
+        (guard_two_armature, guard_two_root),
+        mblab,
+    )
     low, high = bounds(body)
     center = (low + high) * 0.5
     height = high.z - low.z
@@ -766,6 +1054,7 @@ def main() -> None:
     bpy.context.scene.render.filepath = str(output / "arthur_state_changed_face.png")
     bpy.ops.render.render(write_still=True)
     bpy.context.scene.frame_set(1)
+    animate_fight_camera(camera)
     # Motion QA uses the same geometry, rig, camera and material colors without
     # recompiling the Eevee cel-shader graph for every sampled pose.
     bpy.context.scene.render.engine = "BLENDER_WORKBENCH"
@@ -775,13 +1064,15 @@ def main() -> None:
     bpy.context.scene.display.shading.show_cavity = True
     bpy.context.scene.display.shading.cavity_type = "BOTH"
     bpy.context.scene.display.shading.show_specular_highlight = False
+    bpy.context.scene.render.resolution_x = 960
+    bpy.context.scene.render.resolution_y = 540
     bpy.context.scene.render.resolution_percentage = 50
 
     bpy.context.scene["arthur_quality_gate"] = "continuous MB-Lab anime male base"
     bpy.context.scene["source_project"] = "https://github.com/animate1978/MB-Lab"
     bpy.context.scene["arthur_rig"] = "MB-Lab base FK with fitted anime joints"
     bpy.context.scene["arthur_pose"] = "standing_in_lab"
-    bpy.context.scene["arthur_animation"] = "state change frames 1-110 at 15 fps"
+    bpy.context.scene["arthur_animation"] = "state change and two-guard fight frames 1-290 at 15 fps"
     bpy.ops.wm.save_as_mainfile(filepath=str(blend))
 
 
