@@ -42,7 +42,7 @@ jobs:
       - name: Build cleaned reference character and scene
         run: |
           mkdir -p build/review
-          blender --background --python scripts/arthur_reference_v2.py -- \
+          PYTHONPATH="$GITHUB_WORKSPACE/scripts" blender --background --python scripts/arthur_reference_v2.py -- \
             --mblab "$RUNNER_TEMP/MB-Lab" \
             --output "$GITHUB_WORKSPACE/build/review" \
             --blend "$GITHUB_WORKSPACE/build/arthur-reference-v2.blend"
