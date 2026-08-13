@@ -230,10 +230,13 @@ def animate_arthur(armature: bpy.types.Object, face: bpy.types.Object) -> None:
     hair_bones = [bone for bone in armature.pose.bones if bone.name.startswith("HairJoint-")]
     for index, bone in enumerate(hair_bones):
         bone.rotation_mode = "XYZ"
-        bone.rotation_euler.x += math.radians(-13.0 - 2.3 * (index % 5))
-        bone.rotation_euler.z += math.radians((-1 if index % 2 else 1) * (4.0 + index % 4))
+        # Push the authored VRoid hair chains into a readable supernatural lift.
+        # This is deliberately stronger than ordinary secondary motion: the
+        # silhouette has to register in a landscape phone preview.
+        bone.rotation_euler.x += math.radians(-24.0 - 3.1 * (index % 5))
+        bone.rotation_euler.z += math.radians((-1 if index % 2 else 1) * (7.0 + index % 5))
         if bone.parent and not bone.parent.name.startswith("HairJoint-"):
-            bone.location.z += 0.026 + 0.005 * (index % 4)
+            bone.location.z += 0.060 + 0.008 * (index % 4)
     key_character_pose(armature, TRANSFORM_END)
     for index, bone in enumerate(hair_bones):
         bone.rotation_euler.x += math.radians(-1.2 - 0.35 * (index % 3))
@@ -341,9 +344,36 @@ def configure_motion_preview(camera: bpy.types.Object) -> None:
     scene.render.resolution_x = 480
     scene.render.resolution_y = 270
     scene.render.resolution_percentage = 100
+    # Begin wide enough to establish the levitating equipment, then push into
+    # Arthur's face and lifted hair as the transformation takes over.
     camera.data.lens = 52
     camera.location = (1.72, 4.25, 2.10)
     look_at(camera, Vector((0.0, -0.18, 1.04)))
+    for frame in (1, TRANSFORM_START):
+        camera.keyframe_insert(data_path="location", frame=frame)
+        camera.keyframe_insert(data_path="rotation_euler", frame=frame)
+        camera.data.keyframe_insert(data_path="lens", frame=frame)
+
+    camera.data.lens = 58
+    camera.location = (0.68, 2.35, 1.72)
+    look_at(camera, Vector((0.0, -0.12, 1.33)))
+    camera.keyframe_insert(data_path="location", frame=TRANSFORM_END)
+    camera.keyframe_insert(data_path="rotation_euler", frame=TRANSFORM_END)
+    camera.data.keyframe_insert(data_path="lens", frame=TRANSFORM_END)
+
+    camera.data.lens = 62
+    camera.location = (0.36, 1.92, 1.58)
+    look_at(camera, Vector((0.0, -0.06, 1.43)))
+    camera.keyframe_insert(data_path="location", frame=FRAME_END)
+    camera.keyframe_insert(data_path="rotation_euler", frame=FRAME_END)
+    camera.data.keyframe_insert(data_path="lens", frame=FRAME_END)
+
+    for target in (camera, camera.data):
+        if target.animation_data and target.animation_data.action:
+            for curve in target.animation_data.action.fcurves:
+                for point in curve.keyframe_points:
+                    point.interpolation = "BEZIER"
+                    point.easing = "EASE_IN_OUT"
 
 
 def main() -> None:
