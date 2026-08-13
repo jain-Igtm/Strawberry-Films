@@ -8,12 +8,15 @@ continuous anime mesh, face, hair and costume have passed visual inspection.
 from __future__ import annotations
 
 import argparse
+import importlib
+import json
 import math
 import sys
+import types
 from pathlib import Path
 
 import bpy
-from mathutils import Vector
+from mathutils import Quaternion, Vector
 
 
 SKIN_LIGHT = (0.82, 0.51, 0.34, 1.0)
@@ -354,7 +357,7 @@ def create_costume(body: bpy.types.Object) -> list[bpy.types.Object]:
             polygon.material_index = shoe_index
         elif center.z < 0.885:
             polygon.material_index = trouser_index
-        elif center.z < 1.415 and abs(center.x) < 0.68:
+        elif center.z < 1.48 and (center.z < 1.415 or abs(center.x) > 0.105):
             polygon.material_index = cloth_index
 
     pieces = [
@@ -371,6 +374,62 @@ def create_costume(body: bpy.types.Object) -> list[bpy.types.Object]:
     assign_material(seam, trim)
     pieces.append(seam)
     return pieces
+
+
+def rig_anime_body(
+    body: bpy.types.Object,
+    mblab_root: Path,
+) -> bpy.types.Object:
+    """Attach MB-Lab's fitted deformation skeleton without enabling its UI add-on."""
+    package_name = "strawberry_mblab_vendor"
+    if package_name not in sys.modules:
+        package = types.ModuleType(package_name)
+        package.__path__ = [str(mblab_root)]
+        package.__package__ = package_name
+        sys.modules[package_name] = package
+    file_ops = importlib.import_module(f"{package_name}.file_ops")
+    skeletonengine = importlib.import_module(f"{package_name}.skeletonengine")
+    file_ops.set_data_path("data")
+    with (mblab_root / "data" / "characters_config.json").open(encoding="utf-8") as handle:
+        character_config = json.load(handle)["m_an01"]
+    skeleton = skeletonengine.SkeletonEngine(body, character_config, "base")
+    skeleton.fit_joints()
+    armature = skeleton.get_armature()
+    if not armature:
+        raise RuntimeError("MB-Lab did not create Arthur's armature")
+    armature.name = "Arthur_AnimeRig"
+    armature.show_in_front = True
+    armature.hide_render = True
+    print(
+        "ANIME_RIG",
+        f"bones={len(armature.data.bones)}",
+        f"vertex_groups={len(body.vertex_groups)}",
+        f"modifiers={len(body.modifiers)}",
+    )
+    return armature
+
+
+def bone_parent(obj: bpy.types.Object, armature: bpy.types.Object, bone_name: str) -> None:
+    world = obj.matrix_world.copy()
+    obj.parent = armature
+    obj.parent_type = "BONE"
+    obj.parent_bone = bone_name
+    obj.matrix_world = world
+
+
+def load_pose(armature: bpy.types.Object, pose_path: Path) -> None:
+    with pose_path.open(encoding="utf-8") as handle:
+        pose = json.load(handle)
+    applied = 0
+    for name, values in pose.items():
+        bone = armature.pose.bones.get(name)
+        if not bone:
+            continue
+        bone.rotation_mode = "QUATERNION"
+        bone.rotation_quaternion = Quaternion(values)
+        applied += 1
+    bpy.context.view_layer.update()
+    print("ANIME_POSE", pose_path.name, f"bones={applied}")
 
 
 def append_anime_body(mblab_root: Path) -> bpy.types.Object:
@@ -500,8 +559,14 @@ def main() -> None:
 
     clear_scene()
     body = append_anime_body(mblab)
-    create_hair()
-    create_costume(body)
+    hair = create_hair()
+    costume = create_costume(body)
+    armature = rig_anime_body(body, mblab)
+    for object_ in hair:
+        bone_parent(object_, armature, "head")
+    for object_ in costume:
+        bone_parent(object_, armature, "spine03")
+    load_pose(armature, mblab / "data" / "poses" / "male_poses" / "standing_in_lab.json")
     low, high = bounds(body)
     center = (low + high) * 0.5
     height = high.z - low.z
@@ -521,6 +586,8 @@ def main() -> None:
 
     bpy.context.scene["arthur_quality_gate"] = "continuous MB-Lab anime male base"
     bpy.context.scene["source_project"] = "https://github.com/animate1978/MB-Lab"
+    bpy.context.scene["arthur_rig"] = "MB-Lab base FK with fitted anime joints"
+    bpy.context.scene["arthur_pose"] = "standing_in_lab"
     bpy.ops.wm.save_as_mainfile(filepath=str(blend))
 
 
