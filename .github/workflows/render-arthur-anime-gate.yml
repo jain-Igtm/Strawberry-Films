@@ -8,6 +8,7 @@ on:
     paths:
       - "scripts/arthur_anime_gate.py"
       - "scripts/arthur_reference_gate.py"
+      - "scripts/arthur_reference_v2.py"
       - ".github/workflows/render-arthur-anime-gate.yml"
 
 permissions:
@@ -19,7 +20,7 @@ concurrency:
 
 jobs:
   anime-body-gate:
-    name: Render approved Arthur reference design
+    name: Render cleaned Arthur reference design
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -38,17 +39,17 @@ jobs:
           git clone --depth 1 --branch 1_8_1 \
             https://github.com/animate1978/MB-Lab.git \
             "$RUNNER_TEMP/MB-Lab"
-      - name: Build approved reference character and scene
+      - name: Build cleaned reference character and scene
         run: |
           mkdir -p build/review
-          blender --background --python scripts/arthur_reference_gate.py -- \
+          blender --background --python scripts/arthur_reference_v2.py -- \
             --mblab "$RUNNER_TEMP/MB-Lab" \
             --output "$GITHUB_WORKSPACE/build/review" \
-            --blend "$GITHUB_WORKSPACE/build/arthur-reference-gate.blend"
+            --blend "$GITHUB_WORKSPACE/build/arthur-reference-v2.blend"
       - name: Render transformation and fight motion proof
         run: |
           mkdir -p build/motion
-          blender --background build/arthur-reference-gate.blend \
+          blender --background build/arthur-reference-v2.blend \
             -o "$GITHUB_WORKSPACE/build/motion/frame_####" \
             -F PNG \
             -s 1 -e 290 -a
@@ -57,12 +58,12 @@ jobs:
             -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" \
             -c:v libx264 -preset medium -crf 18 \
             -pix_fmt yuv420p -movflags +faststart \
-            build/arthur-reference-lab-fight-proof.mp4
+            build/arthur-reference-v2-lab-fight-proof.mp4
       - uses: actions/upload-artifact@v4
         with:
-          name: arthur-reference-cartoon
+          name: arthur-reference-v2-cartoon
           path: |
             build/review/*.png
-            build/arthur-reference-lab-fight-proof.mp4
-            build/arthur-reference-gate.blend
+            build/arthur-reference-v2-lab-fight-proof.mp4
+            build/arthur-reference-v2.blend
           retention-days: 7
