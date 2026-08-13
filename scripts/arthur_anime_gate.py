@@ -179,6 +179,42 @@ def assign_material(obj: bpy.types.Object, material: bpy.types.Material) -> None
     obj.data.materials.append(material)
 
 
+def emission_material(
+    name: str,
+    color: tuple[float, float, float, float],
+    strength: float = 1.0,
+) -> bpy.types.Material:
+    material = bpy.data.materials.new(name)
+    material.use_nodes = True
+    nodes = material.node_tree.nodes
+    links = material.node_tree.links
+    nodes.clear()
+    emission = nodes.new("ShaderNodeEmission")
+    emission.inputs["Color"].default_value = color
+    emission.inputs["Strength"].default_value = strength
+    output = nodes.new("ShaderNodeOutputMaterial")
+    links.new(emission.outputs["Emission"], output.inputs["Surface"])
+    return material
+
+
+def cube_object(
+    name: str,
+    location: tuple[float, float, float],
+    scale: tuple[float, float, float],
+    material: bpy.types.Material,
+    bevel_width: float = 0.0,
+) -> bpy.types.Object:
+    bpy.ops.mesh.primitive_cube_add(location=location, scale=scale)
+    obj = bpy.context.object
+    obj.name = name
+    assign_material(obj, material)
+    if bevel_width:
+        bevel = obj.modifiers.new("Anime_Edge_Soften", "BEVEL")
+        bevel.width = bevel_width
+        bevel.segments = 2
+    return obj
+
+
 def mesh_object(
     name: str,
     vertices: list[tuple[float, float, float]],
@@ -432,6 +468,79 @@ def load_pose(armature: bpy.types.Object, pose_path: Path) -> None:
     print("ANIME_POSE", pose_path.name, f"bones={applied}")
 
 
+def create_anime_lab() -> list[bpy.types.Object]:
+    wall = cel_material(
+        "Lab_Wall",
+        (0.025, 0.045, 0.075, 1.0),
+        (0.09, 0.17, 0.25, 1.0),
+        (0.32, 0.52, 0.68, 1.0),
+    )
+    floor = cel_material(
+        "Lab_Floor",
+        (0.012, 0.017, 0.026, 1.0),
+        (0.035, 0.055, 0.075, 1.0),
+        (0.11, 0.18, 0.23, 1.0),
+    )
+    frame = cel_material(
+        "Lab_Frame",
+        (0.008, 0.012, 0.020, 1.0),
+        (0.03, 0.05, 0.075, 1.0),
+        (0.12, 0.18, 0.24, 1.0),
+    )
+    cyan = emission_material("Lab_Cyan", (0.025, 0.36, 0.60, 1.0), 0.7)
+    objects = [
+        cube_object("Lab_Floor", (0.0, 0.35, -0.08), (4.4, 3.7, 0.08), floor),
+        cube_object("Lab_BackWall", (0.0, 2.7, 1.65), (4.4, 0.09, 1.75), wall),
+        cube_object("Lab_Window", (0.0, 2.58, 1.9), (2.45, 0.02, 0.72), cyan, 0.025),
+        cube_object("Window_Top", (0.0, 2.52, 2.65), (2.58, 0.08, 0.055), frame),
+        cube_object("Window_Bottom", (0.0, 2.52, 1.15), (2.58, 0.08, 0.055), frame),
+    ]
+    for x in (-2.56, 2.56):
+        objects.append(cube_object(f"Window_Side_{x}", (x, 2.52, 1.9), (0.055, 0.08, 0.80), frame))
+    for x in (-3.4, -2.6, 2.6, 3.4):
+        objects.append(cube_object(f"Lab_Console_{x}", (x, 2.12, 0.66), (0.32, 0.38, 0.65), frame, 0.035))
+        objects.append(cube_object(f"Console_Glow_{x}", (x, 1.72, 0.90), (0.22, 0.018, 0.16), cyan, 0.018))
+    return objects
+
+
+def create_floating_equipment() -> list[bpy.types.Object]:
+    metal = cel_material(
+        "Lab_Equipment",
+        (0.015, 0.022, 0.032, 1.0),
+        (0.07, 0.11, 0.15, 1.0),
+        (0.27, 0.38, 0.46, 1.0),
+    )
+    pieces: list[bpy.types.Object] = []
+    positions = [
+        (-1.6, 0.45, 0.05), (1.55, 0.65, 0.05), (-2.3, 1.15, 0.12),
+        (2.2, 1.35, 0.08), (-1.2, 1.85, 0.12), (1.0, 1.95, 0.12),
+        (-2.8, 2.0, 0.75), (2.9, 1.85, 0.80),
+    ]
+    for index, position in enumerate(positions):
+        if index % 3 == 0:
+            bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=0.055, depth=0.28, location=position)
+            obj = bpy.context.object
+        else:
+            obj = cube_object(f"Floating_Instrument_{index}", position, (0.10, 0.045, 0.035), metal, 0.012)
+        obj.name = f"Floating_Equipment_{index}"
+        if not obj.data.materials:
+            assign_material(obj, metal)
+        start = obj.location.copy()
+        obj.keyframe_insert(data_path="location", frame=1)
+        obj.keyframe_insert(data_path="rotation_euler", frame=1)
+        obj.keyframe_insert(data_path="location", frame=45 + index)
+        obj.keyframe_insert(data_path="rotation_euler", frame=45 + index)
+        angle = math.tau * index / len(positions)
+        obj.location = Vector((math.cos(angle) * (0.65 + index % 3 * 0.18), 0.20 + math.sin(angle) * 0.42, 1.12 + (index % 4) * 0.19))
+        obj.rotation_euler = (math.radians(38 + index * 13), math.radians(index * 21), math.radians(index * 33))
+        obj.keyframe_insert(data_path="location", frame=78 + index)
+        obj.keyframe_insert(data_path="rotation_euler", frame=78 + index)
+        obj.keyframe_insert(data_path="location", frame=110)
+        obj.keyframe_insert(data_path="rotation_euler", frame=110)
+        pieces.append(obj)
+    return pieces
+
+
 def key_rig_pose(armature: bpy.types.Object, frame: int) -> None:
     for bone in armature.pose.bones:
         bone.rotation_mode = "QUATERNION"
@@ -624,6 +733,8 @@ def main() -> None:
     blend.parent.mkdir(parents=True, exist_ok=True)
 
     clear_scene()
+    create_anime_lab()
+    create_floating_equipment()
     body = append_anime_body(mblab)
     hair = create_hair()
     costume = create_costume(body)
