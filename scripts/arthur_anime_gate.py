@@ -345,7 +345,9 @@ def create_costume(body: bpy.types.Object) -> list[bpy.types.Object]:
     shoe_index = len(body.data.materials)
     body.data.materials.append(shoes)
     for polygon in body.data.polygons:
-        if polygon.material_index != 2:
+        # Slot 3 is the modeled eye surface; the legacy toon/generic slots also
+        # contain scattered body faces and must follow the same costume mask.
+        if polygon.material_index == 3:
             continue
         center = sum((body.data.vertices[index].co for index in polygon.vertices), Vector()) / len(polygon.vertices)
         if center.z < 0.12:
@@ -507,7 +509,6 @@ def main() -> None:
 
     camera = configure_render()
     # The first gate confirmed the detailed face is on the negative-Y side.
-    render_view(camera, output, "front_y_negative_body", center, height, -1.0, False)
     render_view(camera, output, "front_y_negative_face", center, height, -1.0, True)
     # The three-quarter gate catches flat hair, bad silhouettes and facial distortion.
     camera.location = Vector((height * 0.38, -height * 0.94, center.z + height * 0.33))
