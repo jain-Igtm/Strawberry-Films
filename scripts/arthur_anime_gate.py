@@ -85,7 +85,10 @@ def cel_material(
     return material
 
 
-def textured_eye_material(source: bpy.types.Material | None) -> bpy.types.Material:
+def textured_eye_material(
+    source: bpy.types.Material | None,
+    albedo: bpy.types.Image | None,
+) -> bpy.types.Material:
     material = bpy.data.materials.new("Arthur_AnimeEyes")
     material.use_nodes = True
     nodes = material.node_tree.nodes
@@ -96,7 +99,7 @@ def textured_eye_material(source: bpy.types.Material | None) -> bpy.types.Materi
     emission.inputs["Color"].default_value = (0.82, 0.93, 1.0, 1.0)
     emission.inputs["Strength"].default_value = 0.38
 
-    image = bpy.data.images.get("Anime_mblab_eys_albedo")
+    image = albedo or bpy.data.images.get("Anime_mblab_eys_albedo")
     if image is None and source and source.use_nodes:
         image_node = next(
             (node for node in source.node_tree.nodes if node.type == "TEX_IMAGE" and node.image),
@@ -122,7 +125,10 @@ def find_first_image(source: bpy.types.Material | None) -> bpy.types.Image | Non
     return None
 
 
-def replace_legacy_materials(body: bpy.types.Object) -> None:
+def replace_legacy_materials(
+    body: bpy.types.Object,
+    albedo: bpy.types.Image | None,
+) -> None:
     source_skin = next(
         (material for material in body.data.materials if material and "skin" in material.name.lower()),
         None,
@@ -132,7 +138,7 @@ def replace_legacy_materials(body: bpy.types.Object) -> None:
         SKIN_SHADOW,
         SKIN_BASE,
         SKIN_LIGHT,
-        bpy.data.images.get("Anime_mblab_skn_albedo") or find_first_image(source_skin),
+        albedo or bpy.data.images.get("Anime_mblab_skn_albedo") or find_first_image(source_skin),
     )
     mouth = cel_material(
         "Arthur_Mouth",
@@ -144,7 +150,7 @@ def replace_legacy_materials(body: bpy.types.Object) -> None:
         (material for material in body.data.materials if material and "eye" in material.name.lower()),
         None,
     )
-    eyes = textured_eye_material(eye_source)
+    eyes = textured_eye_material(eye_source, albedo)
 
     for index, original in enumerate(list(body.data.materials)):
         original_name = original.name if original else "<empty>"
@@ -342,11 +348,11 @@ def create_costume(body: bpy.types.Object) -> list[bpy.types.Object]:
         if polygon.material_index != 2:
             continue
         center = sum((body.data.vertices[index].co for index in polygon.vertices), Vector()) / len(polygon.vertices)
-        if center.z < 0.105:
+        if center.z < 0.12:
             polygon.material_index = shoe_index
-        elif center.z < 0.79:
+        elif center.z < 0.885:
             polygon.material_index = trouser_index
-        elif center.z < 1.405 and abs(center.x) < 0.655:
+        elif center.z < 1.415 and abs(center.x) < 0.68:
             polygon.material_index = cloth_index
 
     pieces = [
@@ -391,8 +397,14 @@ def append_anime_body(mblab_root: Path) -> bpy.types.Object:
 
     for polygon in body.data.polygons:
         polygon.use_smooth = True
+    albedo_path = mblab_root / "data" / "textures" / "anime_male_albedo.png"
+    albedo = bpy.data.images.load(str(albedo_path), check_existing=True) if albedo_path.is_file() else None
+    if albedo:
+        albedo.name = "Arthur_Anime_Albedo"
+        albedo.colorspace_settings.name = "sRGB"
+        print("ANIME_ALBEDO", albedo.filepath, tuple(albedo.size))
     print("ANIME_IMAGES", ", ".join(image.name for image in bpy.data.images))
-    replace_legacy_materials(body)
+    replace_legacy_materials(body, albedo)
     print(
         "ANIME_MESH",
         f"vertices={len(body.data.vertices)}",
