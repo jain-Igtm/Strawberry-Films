@@ -1,7 +1,7 @@
 # Arthur: Lab Break
 
-The target is a thirty-second silent anime 3D action sequence. The accepted first
-gate is the 7.33-second transformation shot; the fight beats below are the next
+The target is a thirty-second silent anime 3D action sequence. The first gate is
+the ten-second VRoid transformation shot; the fight beats below are the next
 production pass built from the same rigged Arthur scene.
 
 ## Story pass
@@ -25,9 +25,9 @@ This is a severe psychopathic dissociative state. It is distinct from **THE STAT
 
 ## Production constraints
 
-- Accepted motion gate: 360×450, 110 frames, 15 fps, H.264 MP4.
+- Motion gate: 480×270, 150 frames, 15 fps, H.264 MP4.
 - Final short target: 1280×720, 15 fps, H.264 MP4.
 - Dialogue, music, and final sound design are intentionally absent.
-- Every visible element is assembled and animated by `scripts/arthur_anime_gate.py`; no manual Blender editing is required.
-- The accepted Arthur base is MB-Lab's continuous anime mesh with its fitted 71-bone rig, not the deleted primitive mannequin prototype.
+- Every visible element is assembled and animated by `scripts/arthur_vroid_short.py`; no manual Blender editing is required.
+- Arthur uses the CC0 VRoid `HairSample_Male` base with a 91-bone rig, 40 facial shape keys, textured anime eyes, authored hair, and a fitted hoodie costume.
 - The Blender scene is preserved with the rendered video so later passes can add guards, fight choreography, voice-over, music, and sound effects.

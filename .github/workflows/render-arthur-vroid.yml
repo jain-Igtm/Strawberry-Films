@@ -1,0 +1,66 @@
+name: Render Arthur VRoid Anime Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "agent/**"
+    paths:
+      - "scripts/arthur_vroid_short.py"
+      - ".github/workflows/render-arthur-vroid.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arthur-vroid-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  render-vroid-gate:
+    name: Render production anime character gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Blender 4.2 and FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg libegl1 libgl1
+          curl --fail --location --retry 3 \
+            --output /tmp/blender.tar.xz \
+            https://download.blender.org/release/Blender4.2/blender-4.2.0-linux-x64.tar.xz
+          tar --extract --xz --file /tmp/blender.tar.xz --directory /tmp
+          echo "/tmp/blender-4.2.0-linux-x64" >> "$GITHUB_PATH"
+      - name: Fetch CC0 masculine VRoid base
+        run: |
+          curl --fail --location --retry 3 \
+            --output "$RUNNER_TEMP/Arthur_HairSample_Male.vrm" \
+            https://raw.githubusercontent.com/madjin/vrm-samples/master/vroid/beta/HairSample_Male.vrm
+          cp "$RUNNER_TEMP/Arthur_HairSample_Male.vrm" "$RUNNER_TEMP/Arthur_HairSample_Male.glb"
+      - name: Build rigged scene and render quality stills
+        run: |
+          mkdir -p build/review
+          blender --background --python scripts/arthur_vroid_short.py -- \
+            --model "$RUNNER_TEMP/Arthur_HairSample_Male.glb" \
+            --output "$GITHUB_WORKSPACE/build/review" \
+            --blend "$GITHUB_WORKSPACE/build/arthur-vroid-lab.blend"
+      - name: Render 150-frame transformation proof
+        run: |
+          mkdir -p build/motion
+          blender --background build/arthur-vroid-lab.blend \
+            -o "$GITHUB_WORKSPACE/build/motion/frame_####" \
+            -F PNG -s 1 -e 150 -a
+          ffmpeg -y -framerate 15 \
+            -i build/motion/frame_%04d.png \
+            -c:v libx264 -preset medium -crf 18 \
+            -pix_fmt yuv420p -movflags +faststart \
+            build/arthur-vroid-transformation-proof.mp4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arthur-vroid-anime-gate
+          path: |
+            build/review/*.png
+            build/arthur-vroid-transformation-proof.mp4
+            build/arthur-vroid-lab.blend
+          retention-days: 14
