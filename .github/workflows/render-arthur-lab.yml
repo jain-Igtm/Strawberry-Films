@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - "agent/**"
     paths:
       - "scripts/arthur_lab_short.py"
       - ".github/workflows/render-arthur-lab.yml"
@@ -44,14 +45,23 @@ jobs:
       matrix:
         include:
           - start: 1
-            end: 150
+            end: 75
             part: 1
-          - start: 151
-            end: 300
+          - start: 76
+            end: 150
             part: 2
-          - start: 301
-            end: 450
+          - start: 151
+            end: 225
             part: 3
+          - start: 226
+            end: 300
+            part: 4
+          - start: 301
+            end: 375
+            part: 5
+          - start: 376
+            end: 450
+            part: 6
     steps:
       - uses: actions/checkout@v4
       - name: Install Blender
