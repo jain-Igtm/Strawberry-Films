@@ -432,6 +432,72 @@ def load_pose(armature: bpy.types.Object, pose_path: Path) -> None:
     print("ANIME_POSE", pose_path.name, f"bones={applied}")
 
 
+def key_rig_pose(armature: bpy.types.Object, frame: int) -> None:
+    for bone in armature.pose.bones:
+        bone.rotation_mode = "QUATERNION"
+        bone.keyframe_insert(data_path="rotation_quaternion", frame=frame)
+        bone.keyframe_insert(data_path="location", frame=frame)
+
+
+def animate_transformation(
+    armature: bpy.types.Object,
+    hair: list[bpy.types.Object],
+    mblab_root: Path,
+) -> None:
+    scene = bpy.context.scene
+    scene.frame_start = 1
+    scene.frame_end = 110
+    scene.render.fps = 15
+
+    lab_pose = mblab_root / "data" / "poses" / "male_poses" / "standing_in_lab.json"
+    altered_pose = mblab_root / "data" / "poses" / "male_poses" / "evil_waiting_orders01.json"
+    load_pose(armature, lab_pose)
+    key_rig_pose(armature, 1)
+    key_rig_pose(armature, 43)
+    load_pose(armature, altered_pose)
+    key_rig_pose(armature, 61)
+    key_rig_pose(armature, 110)
+
+    for index, piece in enumerate(hair):
+        piece.rotation_mode = "XYZ"
+        start_location = piece.location.copy()
+        start_rotation = piece.rotation_euler.copy()
+        piece.keyframe_insert(data_path="location", frame=1)
+        piece.keyframe_insert(data_path="rotation_euler", frame=1)
+        piece.keyframe_insert(data_path="location", frame=43 + index % 3)
+        piece.keyframe_insert(data_path="rotation_euler", frame=43 + index % 3)
+        if piece.name != "Arthur_HairCap":
+            piece.location = start_location + Vector((0.0, 0.0, 0.035 + (index % 4) * 0.012))
+            piece.rotation_euler = start_rotation.copy()
+            piece.rotation_euler.x += math.radians(-9.0 - (index % 3) * 3.5)
+            piece.rotation_euler.y += math.radians((-1 if index % 2 else 1) * (2.0 + index % 4))
+        rise_frame = 60 + index % 8
+        piece.keyframe_insert(data_path="location", frame=rise_frame)
+        piece.keyframe_insert(data_path="rotation_euler", frame=rise_frame)
+        piece.keyframe_insert(data_path="location", frame=110)
+        piece.keyframe_insert(data_path="rotation_euler", frame=110)
+
+    eye_material = bpy.data.materials.get("Arthur_AnimeEyes")
+    if eye_material and eye_material.use_nodes:
+        emission = next((node for node in eye_material.node_tree.nodes if node.type == "EMISSION"), None)
+        if emission:
+            strength = emission.inputs["Strength"]
+            strength.default_value = 0.38
+            strength.keyframe_insert(data_path="default_value", frame=1)
+            strength.keyframe_insert(data_path="default_value", frame=43)
+            strength.default_value = 0.12
+            strength.keyframe_insert(data_path="default_value", frame=58)
+            strength.keyframe_insert(data_path="default_value", frame=110)
+
+    # Tight timing reads as an involuntary state change instead of a heroic power-up.
+    if armature.animation_data and armature.animation_data.action:
+        for curve in armature.animation_data.action.fcurves:
+            for point in curve.keyframe_points:
+                point.interpolation = "BEZIER"
+                point.easing = "EASE_IN_OUT"
+    scene.frame_set(1)
+
+
 def append_anime_body(mblab_root: Path) -> bpy.types.Object:
     library = mblab_root / "data" / "humanoid_library.blend"
     if not library.is_file():
@@ -566,7 +632,7 @@ def main() -> None:
         bone_parent(object_, armature, "head")
     for object_ in costume:
         bone_parent(object_, armature, "spine03")
-    load_pose(armature, mblab / "data" / "poses" / "male_poses" / "standing_in_lab.json")
+    animate_transformation(armature, hair, mblab)
     low, high = bounds(body)
     center = (low + high) * 0.5
     height = high.z - low.z
@@ -583,11 +649,16 @@ def main() -> None:
     bpy.context.scene.render.resolution_y = 900
     bpy.context.scene.render.filepath = str(output / "arthur_three_quarter_face.png")
     bpy.ops.render.render(write_still=True)
+    bpy.context.scene.frame_set(70)
+    bpy.context.scene.render.filepath = str(output / "arthur_state_changed_face.png")
+    bpy.ops.render.render(write_still=True)
+    bpy.context.scene.frame_set(1)
 
     bpy.context.scene["arthur_quality_gate"] = "continuous MB-Lab anime male base"
     bpy.context.scene["source_project"] = "https://github.com/animate1978/MB-Lab"
     bpy.context.scene["arthur_rig"] = "MB-Lab base FK with fitted anime joints"
     bpy.context.scene["arthur_pose"] = "standing_in_lab"
+    bpy.context.scene["arthur_animation"] = "state change frames 1-110 at 15 fps"
     bpy.ops.wm.save_as_mainfile(filepath=str(blend))
 
 
