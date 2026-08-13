@@ -8,6 +8,7 @@ continuous anime mesh, face, hair and costume have passed visual inspection.
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from pathlib import Path
 
@@ -111,13 +112,27 @@ def textured_eye_material(source: bpy.types.Material | None) -> bpy.types.Materi
     return material
 
 
+def find_first_image(source: bpy.types.Material | None) -> bpy.types.Image | None:
+    if source and source.use_nodes:
+        node = next(
+            (candidate for candidate in source.node_tree.nodes if candidate.type == "TEX_IMAGE" and candidate.image),
+            None,
+        )
+        return node.image if node else None
+    return None
+
+
 def replace_legacy_materials(body: bpy.types.Object) -> None:
+    source_skin = next(
+        (material for material in body.data.materials if material and "skin" in material.name.lower()),
+        None,
+    )
     skin = cel_material(
         "Arthur_CelSkin",
         SKIN_SHADOW,
         SKIN_BASE,
         SKIN_LIGHT,
-        bpy.data.images.get("Anime_mblab_skn_albedo"),
+        bpy.data.images.get("Anime_mblab_skn_albedo") or find_first_image(source_skin),
     )
     mouth = cel_material(
         "Arthur_Mouth",
@@ -149,6 +164,188 @@ def replace_legacy_materials(body: bpy.types.Object) -> None:
             f"replacement={replacement.name}",
             f"faces={polygon_count}",
         )
+
+
+def assign_material(obj: bpy.types.Object, material: bpy.types.Material) -> None:
+    obj.data.materials.append(material)
+
+
+def mesh_object(
+    name: str,
+    vertices: list[tuple[float, float, float]],
+    faces: list[tuple[int, ...]],
+    material: bpy.types.Material,
+) -> bpy.types.Object:
+    mesh = bpy.data.meshes.new(f"{name}_Mesh")
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update()
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    assign_material(obj, material)
+    for polygon in mesh.polygons:
+        polygon.use_smooth = True
+    return obj
+
+
+def ring_shell(
+    name: str,
+    rings: list[tuple[float, float, float]],
+    material: bpy.types.Material,
+    sides: int = 32,
+) -> bpy.types.Object:
+    vertices: list[tuple[float, float, float]] = []
+    for z, radius_x, radius_y in rings:
+        for index in range(sides):
+            angle = math.tau * index / sides
+            vertices.append((radius_x * math.cos(angle), radius_y * math.sin(angle), z))
+    faces: list[tuple[int, ...]] = []
+    for ring in range(len(rings) - 1):
+        for index in range(sides):
+            following = (index + 1) % sides
+            current = ring * sides + index
+            faces.append((current, ring * sides + following, (ring + 1) * sides + following, (ring + 1) * sides + index))
+    faces.append(tuple(reversed(range(sides))))
+    last = (len(rings) - 1) * sides
+    faces.append(tuple(last + index for index in range(sides)))
+    return mesh_object(name, vertices, faces, material)
+
+
+def hair_cap(material: bpy.types.Material) -> bpy.types.Object:
+    center = Vector((0.0, -0.075, 1.575))
+    radius_x, radius_y, radius_z = 0.205, 0.178, 0.205
+    rings = 9
+    sides = 40
+    vertices: list[tuple[float, float, float]] = []
+    for ring in range(rings):
+        theta = (math.pi * 0.54) * ring / (rings - 1)
+        radial = math.sin(theta)
+        for side in range(sides):
+            phi = math.tau * side / sides
+            x = center.x + radius_x * radial * math.cos(phi)
+            y = center.y + radius_y * radial * math.sin(phi)
+            z = center.z + radius_z * math.cos(theta)
+            # A raised, asymmetric front edge prevents a helmet-shaped hairline.
+            frontness = max(0.0, -math.sin(phi))
+            z += frontness * (0.052 + 0.018 * math.sin(phi * 3.0)) * (ring / (rings - 1)) ** 3
+            vertices.append((x, y, z))
+    faces: list[tuple[int, ...]] = []
+    for ring in range(rings - 1):
+        for side in range(sides):
+            following = (side + 1) % sides
+            faces.append((ring * sides + side, ring * sides + following, (ring + 1) * sides + following, (ring + 1) * sides + side))
+    cap = mesh_object("Arthur_HairCap", vertices, faces, material)
+    bevel = cap.modifiers.new("Soft_Hair_Edges", "BEVEL")
+    bevel.width = 0.004
+    bevel.segments = 2
+    return cap
+
+
+def hair_blade(
+    name: str,
+    centers: list[tuple[float, float, float]],
+    widths: list[float],
+    material: bpy.types.Material,
+    depth: float = 0.025,
+) -> bpy.types.Object:
+    if len(centers) != len(widths):
+        raise ValueError("A hair blade needs one width per center")
+    vertices: list[tuple[float, float, float]] = []
+    for center, width in zip(centers, widths):
+        x, y, z = center
+        vertices.extend(
+            [
+                (x - width, y - depth, z),
+                (x + width, y - depth, z),
+                (x - width * 0.84, y + depth, z + depth * 0.18),
+                (x + width * 0.84, y + depth, z + depth * 0.18),
+            ]
+        )
+    faces: list[tuple[int, ...]] = []
+    for section in range(len(centers) - 1):
+        a = section * 4
+        b = (section + 1) * 4
+        faces.extend(
+            [
+                (a, a + 1, b + 1, b),
+                (a + 2, b + 2, b + 3, a + 3),
+                (a, b, b + 2, a + 2),
+                (a + 1, a + 3, b + 3, b + 1),
+            ]
+        )
+    faces.append((0, 2, 3, 1))
+    end = (len(centers) - 1) * 4
+    faces.append((end, end + 1, end + 3, end + 2))
+    blade = mesh_object(name, vertices, faces, material)
+    bevel = blade.modifiers.new("Rounded_Lock", "BEVEL")
+    bevel.width = 0.006
+    bevel.segments = 2
+    return blade
+
+
+def create_hair() -> list[bpy.types.Object]:
+    hair = cel_material(
+        "Arthur_CelHair",
+        (0.012, 0.006, 0.014, 1.0),
+        (0.055, 0.018, 0.032, 1.0),
+        (0.19, 0.055, 0.075, 1.0),
+    )
+    pieces = [hair_cap(hair)]
+    # Wide, curved locks read as drawn anime hair and can later lift independently.
+    locks = [
+        ("Fringe_L1", [(-0.17, -0.145, 1.72), (-0.18, -0.225, 1.68), (-0.145, -0.267, 1.605)], [0.060, 0.052, 0.008]),
+        ("Fringe_L2", [(-0.10, -0.165, 1.75), (-0.105, -0.244, 1.70), (-0.075, -0.274, 1.625)], [0.058, 0.047, 0.008]),
+        ("Fringe_C", [(-0.025, -0.175, 1.765), (-0.025, -0.255, 1.705), (0.005, -0.278, 1.645)], [0.060, 0.050, 0.007]),
+        ("Fringe_R1", [(0.055, -0.17, 1.755), (0.07, -0.25, 1.70), (0.105, -0.27, 1.64)], [0.058, 0.046, 0.007]),
+        ("Fringe_R2", [(0.125, -0.15, 1.72), (0.145, -0.225, 1.675), (0.165, -0.25, 1.61)], [0.055, 0.043, 0.006]),
+        ("Crown_L", [(-0.13, -0.05, 1.745), (-0.18, -0.075, 1.82), (-0.215, -0.02, 1.86)], [0.070, 0.048, 0.008]),
+        ("Crown_C", [(-0.03, -0.04, 1.77), (-0.02, -0.055, 1.85), (0.015, -0.01, 1.89)], [0.075, 0.050, 0.008]),
+        ("Crown_R", [(0.09, -0.035, 1.76), (0.14, -0.04, 1.83), (0.19, 0.01, 1.855)], [0.068, 0.045, 0.008]),
+        ("Temple_L", [(-0.19, -0.09, 1.68), (-0.215, -0.14, 1.62), (-0.205, -0.18, 1.54)], [0.048, 0.035, 0.006]),
+        ("Temple_R", [(0.19, -0.085, 1.68), (0.215, -0.13, 1.62), (0.205, -0.17, 1.55)], [0.048, 0.035, 0.006]),
+    ]
+    pieces.extend(hair_blade(name, centers, widths, hair) for name, centers, widths in locks)
+    return pieces
+
+
+def create_costume() -> list[bpy.types.Object]:
+    cloth = cel_material(
+        "Arthur_LabCoat",
+        (0.018, 0.035, 0.075, 1.0),
+        (0.045, 0.12, 0.22, 1.0),
+        (0.15, 0.34, 0.55, 1.0),
+    )
+    trim = cel_material(
+        "Arthur_CostumeTrim",
+        (0.015, 0.025, 0.04, 1.0),
+        (0.10, 0.16, 0.22, 1.0),
+        (0.28, 0.42, 0.52, 1.0),
+    )
+    pieces = [
+        ring_shell(
+            "Arthur_Jacket",
+            [
+                (0.74, 0.255, 0.125),
+                (0.88, 0.285, 0.135),
+                (1.08, 0.300, 0.145),
+                (1.27, 0.325, 0.155),
+                (1.37, 0.365, 0.158),
+                (1.405, 0.255, 0.128),
+            ],
+            cloth,
+        ),
+        ring_shell(
+            "Arthur_HighCollar",
+            [(1.38, 0.125, 0.098), (1.47, 0.132, 0.102), (1.505, 0.119, 0.096)],
+            trim,
+        ),
+    ]
+    # One broad front seam and collar tab add graphic design without mannequin geometry.
+    bpy.ops.mesh.primitive_cube_add(location=(0.0, -0.160, 1.075), scale=(0.011, 0.008, 0.295))
+    seam = bpy.context.object
+    seam.name = "Arthur_JacketSeam"
+    assign_material(seam, trim)
+    pieces.append(seam)
+    return pieces
 
 
 def append_anime_body(mblab_root: Path) -> bpy.types.Object:
@@ -272,6 +469,8 @@ def main() -> None:
 
     clear_scene()
     body = append_anime_body(mblab)
+    create_hair()
+    create_costume()
     low, high = bounds(body)
     center = (low + high) * 0.5
     height = high.z - low.z
@@ -281,6 +480,14 @@ def main() -> None:
     # The first gate confirmed the detailed face is on the negative-Y side.
     render_view(camera, output, "front_y_negative_body", center, height, -1.0, False)
     render_view(camera, output, "front_y_negative_face", center, height, -1.0, True)
+    # The three-quarter gate catches flat hair, bad silhouettes and facial distortion.
+    camera.location = Vector((height * 0.45, -height * 0.74, center.z + height * 0.34))
+    look_at(camera, Vector((0.0, -0.04, center.z + height * 0.31)))
+    camera.data.lens = 68
+    bpy.context.scene.render.resolution_x = 720
+    bpy.context.scene.render.resolution_y = 900
+    bpy.context.scene.render.filepath = str(output / "arthur_three_quarter_face.png")
+    bpy.ops.render.render(write_still=True)
 
     bpy.context.scene["arthur_quality_gate"] = "continuous MB-Lab anime male base"
     bpy.context.scene["source_project"] = "https://github.com/animate1978/MB-Lab"
