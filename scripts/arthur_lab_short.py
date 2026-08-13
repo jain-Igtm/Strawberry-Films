@@ -118,7 +118,8 @@ def cube(
     if parent:
         obj.parent = parent
         obj.location = location
-    obj.scale = scale
+    # Callers specify half-extents, matching Blender's usual box dimensions.
+    obj.scale = tuple(value * 2.0 for value in scale)
     apply_material(obj, mat)
     if bevel_width:
         bevel(obj, bevel_width)
@@ -276,13 +277,47 @@ def hair_lock(
     *,
     parent: object,
 ) -> object:
-    rings = [
-        (0.00, radius, radius * 0.55),
-        (length * 0.32, radius * 0.86, radius * 0.48),
-        (length * 0.66, radius * 0.55, radius * 0.34),
-        (length, 0.008, 0.005),
-    ]
-    return profile_mesh(name, base, rings, mat, parent=parent, sides=12)
+    sides = 10
+    ring_count = 7
+    vertices: List[Tuple[float, float, float]] = []
+    for ring in range(ring_count):
+        t = ring / (ring_count - 1)
+        center_x = math.sin(t * math.pi) * radius * 0.28
+        center_y = -math.sin(t * math.pi * 0.85) * radius * 0.34
+        taper = max(0.10, (1.0 - t) ** 0.72)
+        radius_x = radius * taper
+        radius_y = radius * 0.48 * taper
+        for index in range(sides):
+            angle = math.tau * index / sides
+            vertices.append(
+                (
+                    center_x + math.cos(angle) * radius_x,
+                    center_y + math.sin(angle) * radius_y,
+                    length * t,
+                )
+            )
+    faces: List[Tuple[int, ...]] = []
+    for ring in range(ring_count - 1):
+        for index in range(sides):
+            following = (index + 1) % sides
+            start = ring * sides
+            next_start = (ring + 1) * sides
+            faces.append((start + index, start + following, next_start + following, next_start + index))
+    faces.append(tuple(reversed(range(sides))))
+    final = (ring_count - 1) * sides
+    faces.append(tuple(final + index for index in range(sides)))
+    mesh = bpy.data.meshes.new(f"{name} mesh")
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update()
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    obj.parent = parent
+    obj.location = base
+    apply_material(obj, mat)
+    for polygon in mesh.polygons:
+        polygon.use_smooth = True
+    bevel(obj, 0.006, 2)
+    return obj
 
 
 def key_location(obj: object, frame: int, xyz: Sequence[float]) -> None:
@@ -337,11 +372,11 @@ def create_character(name: str, location: Sequence[float], palette: Palette, *, 
     root = empty(f"{name} root", location)
     root.scale = (size, size, size)
 
-    body_width = 0.285 if young else 0.335
+    body_width = 0.265 if young else 0.315
     pelvis = profile_mesh(
         f"{name} pelvis",
         (0, 0, 0),
-        ((0.78, 0.20, 0.145), (0.91, 0.27, 0.18), (1.05, 0.25, 0.17)),
+        ((0.86, 0.17, 0.125), (0.98, 0.225, 0.15), (1.09, 0.215, 0.145)),
         palette.trousers,
         parent=root,
     )
@@ -349,112 +384,120 @@ def create_character(name: str, location: Sequence[float], palette: Palette, *, 
         f"{name} torso",
         (0, 0, 0),
         (
-            (1.00, body_width * 0.76, 0.145),
-            (1.20, body_width * 0.88, 0.16),
+            (1.04, body_width * 0.74, 0.135),
+            (1.20, body_width * 0.84, 0.15),
             (1.48, body_width, 0.175),
-            (1.64, body_width * 1.06, 0.18),
-            (1.70, body_width * 0.70, 0.14),
+            (1.62, body_width * 1.08, 0.17),
+            (1.68, body_width * 0.70, 0.13),
         ),
         palette.shirt,
         parent=root,
     )
-    cube(f"{name} belt", (0, -0.012, 1.02), (0.245, 0.16, 0.025), palette.shoes, parent=root, bevel_width=0.012)
-    neck = cylinder(f"{name} neck", (0, 0, 1.73), 0.072, 0.18, palette.skin, parent=root, vertices=32)
-    head_joint = empty(f"{name} head joint", (0, 0, 1.93), root)
+    cube(f"{name} belt", (0, -0.004, 1.055), (0.215, 0.145, 0.018), palette.shoes, parent=root, bevel_width=0.009)
+    cube(f"{name} chest seam", (0, -0.170, 1.43), (0.135, 0.008, 0.009), palette.shoes, parent=root, bevel_width=0.006)
+    neck = cylinder(f"{name} neck", (0, 0, 1.72), 0.066, 0.18, palette.skin, parent=root, vertices=32)
+    head_joint = empty(f"{name} head joint", (0, 0, 1.91), root)
     jaw = profile_mesh(
         f"{name} jaw",
         (0, 0, 0),
-        ((-0.245, 0.095, 0.115), (-0.17, 0.165, 0.16), (-0.02, 0.213, 0.19), (0.10, 0.218, 0.19)),
+        ((-0.215, 0.070, 0.092), (-0.165, 0.135, 0.145), (-0.035, 0.180, 0.168), (0.085, 0.190, 0.170)),
         palette.skin,
         parent=head_joint,
         sides=40,
     )
-    cranium = sphere(f"{name} cranium", (0, 0.018, 0.105), (0.222, 0.196, 0.205), palette.skin, parent=head_joint, segments=40)
-    ear_l = sphere(f"{name} ear L", (-0.218, 0.003, -0.005), (0.029, 0.022, 0.061), palette.skin, parent=head_joint, segments=24)
-    ear_r = sphere(f"{name} ear R", (0.218, 0.003, -0.005), (0.029, 0.022, 0.061), palette.skin, parent=head_joint, segments=24)
+    cranium = sphere(f"{name} cranium", (0, 0.015, 0.092), (0.194, 0.176, 0.184), palette.skin, parent=head_joint, segments=48)
+    ear_l = sphere(f"{name} ear L", (-0.190, 0.003, -0.016), (0.023, 0.017, 0.052), palette.skin, parent=head_joint, segments=28)
+    ear_r = sphere(f"{name} ear R", (0.190, 0.003, -0.016), (0.023, 0.017, 0.052), palette.skin, parent=head_joint, segments=28)
 
-    eye_l = sphere(f"{name} eye white L", (-0.080, -0.184, 0.034), (0.052, 0.018, 0.031), palette.sclera, parent=head_joint, segments=28)
-    eye_r = sphere(f"{name} eye white R", (0.080, -0.184, 0.034), (0.052, 0.018, 0.031), palette.sclera, parent=head_joint, segments=28)
-    sphere(f"{name} iris L", (-0.080, -0.201, 0.034), (0.022, 0.008, 0.021), palette.eyes, parent=head_joint, segments=24)
-    sphere(f"{name} iris R", (0.080, -0.201, 0.034), (0.022, 0.008, 0.021), palette.eyes, parent=head_joint, segments=24)
-    sphere(f"{name} pupil L", (-0.080, -0.208, 0.034), (0.009, 0.005, 0.011), palette.pupils, parent=head_joint, segments=20)
-    sphere(f"{name} pupil R", (0.080, -0.208, 0.034), (0.009, 0.005, 0.011), palette.pupils, parent=head_joint, segments=20)
-    nose = cone(f"{name} nose", (0, -0.205, -0.018), 0.032, 0.125, palette.skin, parent=head_joint)
+    eye_l = sphere(f"{name} eye white L", (-0.067, -0.169, 0.023), (0.036, 0.011, 0.016), palette.sclera, parent=head_joint, segments=32)
+    eye_r = sphere(f"{name} eye white R", (0.067, -0.169, 0.023), (0.036, 0.011, 0.016), palette.sclera, parent=head_joint, segments=32)
+    sphere(f"{name} iris L", (-0.067, -0.180, 0.023), (0.013, 0.006, 0.013), palette.eyes, parent=head_joint, segments=28)
+    sphere(f"{name} iris R", (0.067, -0.180, 0.023), (0.013, 0.006, 0.013), palette.eyes, parent=head_joint, segments=28)
+    sphere(f"{name} pupil L", (-0.067, -0.185, 0.023), (0.005, 0.003, 0.007), palette.pupils, parent=head_joint, segments=20)
+    sphere(f"{name} pupil R", (0.067, -0.185, 0.023), (0.005, 0.003, 0.007), palette.pupils, parent=head_joint, segments=20)
+    sphere(f"{name} upper lid L", (-0.067, -0.181, 0.035), (0.040, 0.006, 0.010), palette.skin, parent=head_joint, segments=28)
+    sphere(f"{name} upper lid R", (0.067, -0.181, 0.035), (0.040, 0.006, 0.010), palette.skin, parent=head_joint, segments=28)
+    sphere(f"{name} nose bridge", (0, -0.162, -0.005), (0.021, 0.017, 0.061), palette.skin, parent=head_joint, segments=28)
+    nose = cone(f"{name} nose", (0, -0.182, -0.040), 0.024, 0.095, palette.skin, parent=head_joint)
     nose.rotation_euler.x = 90 * DEG
     mouth_mat = material(f"{name} mouth", (0.18, 0.035, 0.025, 1), roughness=0.7)
     mouth = curve_line(
         f"{name} mouth",
-        ((-0.060, -0.198, -0.114), (0, -0.207, -0.120), (0.060, -0.198, -0.114)),
-        0.008,
+        ((-0.049, -0.169, -0.103), (0, -0.180, -0.108), (0.049, -0.169, -0.103)),
+        0.0055,
         mouth_mat,
         parent=head_joint,
     )
     brow_l = curve_line(
         f"{name} brow L",
-        ((-0.137, -0.190, 0.095), (-0.082, -0.205, 0.108), (-0.030, -0.195, 0.102)),
-        0.010,
+        ((-0.112, -0.169, 0.075), (-0.068, -0.180, 0.084), (-0.028, -0.173, 0.080)),
+        0.006,
         palette.brows,
         parent=head_joint,
     )
     brow_r = curve_line(
         f"{name} brow R",
-        ((0.030, -0.195, 0.102), (0.082, -0.205, 0.108), (0.137, -0.190, 0.095)),
-        0.010,
+        ((0.028, -0.173, 0.080), (0.068, -0.180, 0.084), (0.112, -0.169, 0.075)),
+        0.006,
         palette.brows,
         parent=head_joint,
     )
 
     # A fitted crown replaces the old cone helmet; Arthur's locks sit over it.
-    hair_cap = sphere(f"{name} fitted hair", (0, 0.025, 0.185), (0.221, 0.191, 0.118), palette.hair, parent=head_joint, segments=40)
-    curve_line(f"{name} left hairline", ((-0.205, -0.13, 0.13), (-0.16, -0.17, 0.19), (-0.09, -0.185, 0.22)), 0.016, palette.hair, parent=head_joint)
-    curve_line(f"{name} right hairline", ((0.205, -0.13, 0.13), (0.16, -0.17, 0.19), (0.09, -0.185, 0.22)), 0.016, palette.hair, parent=head_joint)
+    hair_cap = sphere(f"{name} fitted hair", (0, 0.024, 0.184), (0.194, 0.171, 0.095), palette.hair, parent=head_joint, segments=48)
 
     joints: Dict[str, object] = {"head": head_joint}
     for side, sx in (("L", -1), ("R", 1)):
-        shoulder = empty(f"{name} shoulder {side}", ((body_width + 0.055) * sx, 0, 1.59), root)
-        sphere(f"{name} shoulder cap {side}", (0, 0, -0.025), (0.105, 0.105, 0.13), palette.shirt, parent=shoulder, segments=28)
-        upper_arm = segment(f"{name} upper arm {side}", shoulder, 0.39, 0.085, palette.shirt)
+        shoulder = empty(f"{name} shoulder {side}", ((body_width + 0.040) * sx, 0, 1.57), root)
+        sphere(f"{name} shoulder cap {side}", (0, 0, -0.022), (0.074, 0.076, 0.092), palette.shirt, parent=shoulder, segments=32)
+        upper_arm = segment(f"{name} upper arm {side}", shoulder, 0.40, 0.067, palette.shirt)
         elbow = empty(f"{name} elbow {side}", (0, 0, -0.39), shoulder)
-        sphere(f"{name} elbow form {side}", (0, 0, 0), (0.077, 0.068, 0.075), palette.skin, parent=elbow, segments=24)
-        forearm = segment(f"{name} forearm {side}", elbow, 0.36, 0.069, palette.skin)
-        wrist = empty(f"{name} wrist {side}", (0, 0, -0.36), elbow)
-        sphere(f"{name} palm {side}", (0, -0.005, -0.070), (0.074, 0.047, 0.108), palette.skin, parent=wrist, segments=28)
-        finger_offsets = (-0.047, -0.016, 0.016, 0.047)
+        sphere(f"{name} elbow form {side}", (0, 0, 0), (0.060, 0.056, 0.062), palette.skin, parent=elbow, segments=28)
+        forearm = segment(f"{name} forearm {side}", elbow, 0.37, 0.056, palette.skin)
+        wrist = empty(f"{name} wrist {side}", (0, 0, -0.37), elbow)
+        sphere(f"{name} palm {side}", (0, -0.004, -0.055), (0.052, 0.035, 0.082), palette.skin, parent=wrist, segments=32)
+        finger_offsets = (-0.034, -0.011, 0.011, 0.034)
         for finger_index, offset in enumerate(finger_offsets):
             sphere(
                 f"{name} finger {side} {finger_index}",
-                (offset, -0.008, -0.155 + abs(offset) * 0.22),
-                (0.014, 0.014, 0.060 - abs(offset) * 0.18),
+                (offset, -0.007, -0.112 + abs(offset) * 0.18),
+                (0.010, 0.010, 0.038 - abs(offset) * 0.12),
                 palette.skin,
                 parent=wrist,
                 segments=16,
             )
-        thumb = sphere(f"{name} thumb {side}", (0.074 * sx, -0.005, -0.060), (0.035, 0.026, 0.055), palette.skin, parent=wrist, segments=18)
+        thumb = sphere(f"{name} thumb {side}", (0.052 * sx, -0.004, -0.050), (0.024, 0.019, 0.040), palette.skin, parent=wrist, segments=20)
         thumb.rotation_euler.y = -32 * sx * DEG
-        hip = empty(f"{name} hip {side}", (0.135 * sx, 0, 1.00), root)
-        sphere(f"{name} hip form {side}", (0, 0, -0.02), (0.135, 0.125, 0.14), palette.trousers, parent=hip, segments=28)
-        thigh = segment(f"{name} thigh {side}", hip, 0.48, 0.115, palette.trousers)
+        hip = empty(f"{name} hip {side}", (0.115 * sx, 0, 1.03), root)
+        sphere(f"{name} hip form {side}", (0, 0, -0.02), (0.105, 0.098, 0.115), palette.trousers, parent=hip, segments=32)
+        thigh = segment(f"{name} thigh {side}", hip, 0.50, 0.091, palette.trousers)
         knee = empty(f"{name} knee {side}", (0, 0, -0.48), hip)
-        sphere(f"{name} knee form {side}", (0, -0.005, 0), (0.095, 0.087, 0.10), palette.trousers, parent=knee, segments=24)
-        shin = segment(f"{name} shin {side}", knee, 0.42, 0.088, palette.trousers)
-        foot = sphere(f"{name} foot {side}", (0, -0.072, -0.43), (0.105, 0.180, 0.082), palette.shoes, parent=knee, segments=28)
+        sphere(f"{name} knee form {side}", (0, -0.005, 0), (0.073, 0.068, 0.075), palette.trousers, parent=knee, segments=28)
+        shin = segment(f"{name} shin {side}", knee, 0.43, 0.070, palette.trousers)
+        foot = sphere(f"{name} foot {side}", (0, -0.080, -0.44), (0.083, 0.165, 0.064), palette.shoes, parent=knee, segments=32)
         joints.update({f"shoulder_{side}": shoulder, f"elbow_{side}": elbow, f"hip_{side}": hip, f"knee_{side}": knee})
 
     hair: List[object] = []
     if young:
         hair_layout = [
-            (-0.170, -0.050, 0.245, 72, -20, 0.29, 0.052),
-            (-0.115, -0.115, 0.265, 80, -13, 0.34, 0.058),
-            (-0.055, -0.145, 0.280, 84, -6, 0.37, 0.060),
-            (0.015, -0.150, 0.284, 86, 3, 0.38, 0.061),
-            (0.082, -0.132, 0.274, 82, 11, 0.36, 0.058),
-            (0.145, -0.082, 0.255, 76, 19, 0.32, 0.054),
-            (-0.175, 0.025, 0.258, 48, -28, 0.31, 0.054),
-            (-0.095, 0.060, 0.285, 37, -16, 0.36, 0.060),
-            (-0.010, 0.075, 0.298, 29, -4, 0.39, 0.062),
-            (0.080, 0.065, 0.288, 35, 12, 0.37, 0.060),
-            (0.160, 0.025, 0.260, 48, 25, 0.32, 0.054),
-            (0.020, 0.135, 0.266, -24, 5, 0.33, 0.056),
+            (-0.160, -0.030, 0.220, 82, -25, 0.21, 0.025),
+            (-0.120, -0.090, 0.235, 86, -18, 0.24, 0.029),
+            (-0.075, -0.125, 0.248, 89, -12, 0.27, 0.031),
+            (-0.025, -0.142, 0.254, 91, -5, 0.29, 0.032),
+            (0.030, -0.140, 0.253, 90, 4, 0.28, 0.032),
+            (0.082, -0.120, 0.246, 88, 12, 0.27, 0.031),
+            (0.130, -0.075, 0.232, 85, 20, 0.24, 0.028),
+            (0.163, -0.020, 0.218, 81, 27, 0.21, 0.024),
+            (-0.145, 0.035, 0.230, 96, -29, 0.22, 0.026),
+            (-0.095, 0.070, 0.247, 98, -20, 0.25, 0.029),
+            (-0.040, 0.088, 0.257, 101, -10, 0.28, 0.031),
+            (0.018, 0.090, 0.259, 100, 2, 0.29, 0.032),
+            (0.075, 0.078, 0.251, 99, 14, 0.27, 0.030),
+            (0.128, 0.045, 0.236, 96, 25, 0.23, 0.027),
+            (-0.085, 0.125, 0.238, 105, -18, 0.23, 0.027),
+            (-0.025, 0.145, 0.244, 108, -7, 0.25, 0.029),
+            (0.038, 0.142, 0.243, 107, 8, 0.24, 0.028),
+            (0.098, 0.115, 0.235, 104, 20, 0.22, 0.026),
         ]
         for index, (x, y, z, rx, rz, length, radius) in enumerate(hair_layout):
             strand = hair_lock(f"{name} hair lock {index:02d}", (x, y, z), length, radius, palette.hair, parent=head_joint)
