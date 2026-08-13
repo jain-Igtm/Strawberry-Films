@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-      - "agent/**"
     paths:
       - "scripts/arthur_lab_short.py"
       - ".github/workflows/render-arthur-lab.yml"
