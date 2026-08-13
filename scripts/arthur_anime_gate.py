@@ -765,7 +765,7 @@ def main() -> None:
     bpy.ops.render.render(write_still=True)
     bpy.context.scene.frame_set(1)
     # Motion proof is intentionally smaller than the still-quality gates.
-    bpy.context.scene.render.resolution_percentage = 40
+    bpy.context.scene.render.resolution_percentage = 25
 
     bpy.context.scene["arthur_quality_gate"] = "continuous MB-Lab anime male base"
     bpy.context.scene["source_project"] = "https://github.com/animate1978/MB-Lab"
