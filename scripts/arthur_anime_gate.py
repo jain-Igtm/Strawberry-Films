@@ -8,13 +8,16 @@ continuous anime mesh, face, hair and costume have passed visual inspection.
 from __future__ import annotations
 
 import argparse
-import math
-import os
 import sys
 from pathlib import Path
 
 import bpy
 from mathutils import Vector
+
+
+SKIN_LIGHT = (0.82, 0.51, 0.34, 1.0)
+SKIN_BASE = (0.58, 0.27, 0.16, 1.0)
+SKIN_SHADOW = (0.22, 0.075, 0.055, 1.0)
 
 
 def cli() -> argparse.Namespace:
@@ -32,6 +35,120 @@ def clear_scene() -> None:
     for datablocks in (bpy.data.cameras, bpy.data.lights, bpy.data.curves):
         for datablock in list(datablocks):
             datablocks.remove(datablock)
+
+
+def cel_material(
+    name: str,
+    shadow: tuple[float, float, float, float],
+    base: tuple[float, float, float, float],
+    light: tuple[float, float, float, float],
+    texture_image: bpy.types.Image | None = None,
+) -> bpy.types.Material:
+    material = bpy.data.materials.new(name)
+    material.use_nodes = True
+    nodes = material.node_tree.nodes
+    links = material.node_tree.links
+    nodes.clear()
+    diffuse = nodes.new("ShaderNodeBsdfDiffuse")
+    shader_to_rgb = nodes.new("ShaderNodeShaderToRGB")
+    ramp = nodes.new("ShaderNodeValToRGB")
+    emission = nodes.new("ShaderNodeEmission")
+    output = nodes.new("ShaderNodeOutputMaterial")
+    diffuse.inputs["Color"].default_value = base
+    diffuse.inputs["Roughness"].default_value = 0.75
+    ramp.color_ramp.interpolation = "CONSTANT"
+    ramp.color_ramp.elements.remove(ramp.color_ramp.elements[1])
+    shade = ramp.color_ramp.elements[0]
+    shade.position = 0.28
+    shade.color = shadow
+    middle = ramp.color_ramp.elements.new(0.52)
+    middle.color = base
+    highlight = ramp.color_ramp.elements.new(0.78)
+    highlight.color = light
+    links.new(diffuse.outputs["BSDF"], shader_to_rgb.inputs["Shader"])
+    links.new(shader_to_rgb.outputs["Color"], ramp.inputs["Fac"])
+    if texture_image is not None:
+        texture = nodes.new("ShaderNodeTexImage")
+        texture.image = texture_image
+        texture.interpolation = "Linear"
+        multiply = nodes.new("ShaderNodeMixRGB")
+        multiply.blend_type = "MULTIPLY"
+        multiply.inputs[0].default_value = 1.0
+        links.new(ramp.outputs["Color"], multiply.inputs[1])
+        links.new(texture.outputs["Color"], multiply.inputs[2])
+        links.new(multiply.outputs["Color"], emission.inputs["Color"])
+    else:
+        links.new(ramp.outputs["Color"], emission.inputs["Color"])
+    emission.inputs["Strength"].default_value = 0.82
+    links.new(emission.outputs["Emission"], output.inputs["Surface"])
+    return material
+
+
+def textured_eye_material(source: bpy.types.Material | None) -> bpy.types.Material:
+    material = bpy.data.materials.new("Arthur_AnimeEyes")
+    material.use_nodes = True
+    nodes = material.node_tree.nodes
+    links = material.node_tree.links
+    nodes.clear()
+    output = nodes.new("ShaderNodeOutputMaterial")
+    emission = nodes.new("ShaderNodeEmission")
+    emission.inputs["Color"].default_value = (0.82, 0.93, 1.0, 1.0)
+    emission.inputs["Strength"].default_value = 0.38
+
+    image = bpy.data.images.get("Anime_mblab_eys_albedo")
+    if image is None and source and source.use_nodes:
+        image_node = next(
+            (node for node in source.node_tree.nodes if node.type == "TEX_IMAGE" and node.image),
+            None,
+        )
+        image = image_node.image if image_node else None
+    if image is not None:
+        texture = nodes.new("ShaderNodeTexImage")
+        texture.image = image
+        texture.interpolation = "Linear"
+        links.new(texture.outputs["Color"], emission.inputs["Color"])
+    links.new(emission.outputs["Emission"], output.inputs["Surface"])
+    return material
+
+
+def replace_legacy_materials(body: bpy.types.Object) -> None:
+    skin = cel_material(
+        "Arthur_CelSkin",
+        SKIN_SHADOW,
+        SKIN_BASE,
+        SKIN_LIGHT,
+        bpy.data.images.get("Anime_mblab_skn_albedo"),
+    )
+    mouth = cel_material(
+        "Arthur_Mouth",
+        (0.025, 0.008, 0.012, 1.0),
+        (0.16, 0.035, 0.045, 1.0),
+        (0.42, 0.12, 0.13, 1.0),
+    )
+    eye_source = next(
+        (material for material in body.data.materials if material and "eye" in material.name.lower()),
+        None,
+    )
+    eyes = textured_eye_material(eye_source)
+
+    for index, original in enumerate(list(body.data.materials)):
+        original_name = original.name if original else "<empty>"
+        lowered = original_name.lower()
+        if "eye" in lowered:
+            replacement = eyes
+        elif any(word in lowered for word in ("mouth", "teeth", "tongue")):
+            replacement = mouth
+        else:
+            replacement = skin
+        body.data.materials[index] = replacement
+        polygon_count = sum(1 for polygon in body.data.polygons if polygon.material_index == index)
+        print(
+            "ANIME_MATERIAL",
+            f"slot={index}",
+            f"source={original_name}",
+            f"replacement={replacement.name}",
+            f"faces={polygon_count}",
+        )
 
 
 def append_anime_body(mblab_root: Path) -> bpy.types.Object:
@@ -60,6 +177,8 @@ def append_anime_body(mblab_root: Path) -> bpy.types.Object:
 
     for polygon in body.data.polygons:
         polygon.use_smooth = True
+    print("ANIME_IMAGES", ", ".join(image.name for image in bpy.data.images))
+    replace_legacy_materials(body)
     print(
         "ANIME_MESH",
         f"vertices={len(body.data.vertices)}",
@@ -159,11 +278,9 @@ def main() -> None:
     print("ANIME_BOUNDS", f"low={tuple(low)}", f"high={tuple(high)}", f"height={height:.4f}")
 
     camera = configure_render()
-    # MB-Lab's template orientation is confirmed by rendering both Y directions once.
+    # The first gate confirmed the detailed face is on the negative-Y side.
     render_view(camera, output, "front_y_negative_body", center, height, -1.0, False)
-    render_view(camera, output, "front_y_positive_body", center, height, 1.0, False)
     render_view(camera, output, "front_y_negative_face", center, height, -1.0, True)
-    render_view(camera, output, "front_y_positive_face", center, height, 1.0, True)
 
     bpy.context.scene["arthur_quality_gate"] = "continuous MB-Lab anime male base"
     bpy.context.scene["source_project"] = "https://github.com/animate1978/MB-Lab"
