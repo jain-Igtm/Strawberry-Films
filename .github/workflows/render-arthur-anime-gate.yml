@@ -1,0 +1,51 @@
+name: Render Arthur Anime Quality Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "agent/**"
+    paths:
+      - "scripts/arthur_anime_gate.py"
+      - ".github/workflows/render-arthur-anime-gate.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arthur-anime-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  anime-body-gate:
+    name: Render continuous anime mesh
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Blender 4.2
+        run: |
+          curl --fail --location --retry 3 \
+            --output /tmp/blender.tar.xz \
+            https://download.blender.org/release/Blender4.2/blender-4.2.0-linux-x64.tar.xz
+          tar --extract --xz --file /tmp/blender.tar.xz --directory /tmp
+          echo "/tmp/blender-4.2.0-linux-x64" >> "$GITHUB_PATH"
+      - name: Fetch MB-Lab anime body library
+        run: |
+          git clone --depth 1 --branch 1_8_1 \
+            https://github.com/animate1978/MB-Lab.git \
+            "$RUNNER_TEMP/MB-Lab"
+      - name: Build and render orientation gate
+        run: |
+          mkdir -p build/review
+          blender --background --python scripts/arthur_anime_gate.py -- \
+            --mblab "$RUNNER_TEMP/MB-Lab" \
+            --output "$GITHUB_WORKSPACE/build/review" \
+            --blend "$GITHUB_WORKSPACE/build/arthur-anime-gate.blend"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arthur-anime-body-gate
+          path: |
+            build/review/*.png
+            build/arthur-anime-gate.blend
+          retention-days: 7
